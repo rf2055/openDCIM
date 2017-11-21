@@ -258,6 +258,21 @@ $(document).ready(function(){
 		}
 	});
 
+	// The container helper function needs the menu to be visible 
+	function manglecontainer(){
+		if($('#datacenters .bullet').length==0){
+			setTimeout(function(){
+				manglecontainer();
+			},100);
+		}else{
+			// Add some helpers to the various container selectors
+			$('#container, #containerform #parentid, #containerid').each(function(){
+				containerhelper($(this));
+			});
+		}
+	}
+	manglecontainer();
+
 	// The document has to be loaded before the event handler can be bound for the map
 	bindmaptooltips();
 });
@@ -544,7 +559,7 @@ function buildportstable(){
 		var label=(rrow.data('change'))?rrow.find('input[name^=label]').val():(typeof TemplatePortObj.Label=='undefined')?'':TemplatePortObj.Label;
 		var mt=(rrow.data('change'))?rrow.find('select[name^=mt]').val():(typeof TemplatePortObj.MediaID=='undefined')?'0':TemplatePortObj.MediaID;
 		var c=(rrow.data('change'))?rrow.find('select[name^=cc]').val():(typeof TemplatePortObj.ColorID=='undefined')?'0':TemplatePortObj.ColorID;
-		var n=(rrow.data('change'))?rrow.find('input[name^=portnotes]').val():(typeof TemplatePortObj.PortNotes=='undefined')?'':TemplatePortObj.PortNotes;
+		var n=(rrow.data('change'))?rrow.find('input[name^=notes]').val():(typeof TemplatePortObj.Notes=='undefined')?'':TemplatePortObj.Notes;
 
 		var row=$('<div>').
 			append($('<div>').html(pn)).
@@ -729,6 +744,40 @@ function buildpowerportstable(){
 
 // END - Image Management
 
+// Container Helper
+function containerhelper(select_obj){
+	// store the current value of the select
+	var curval=select_obj.val();
+	// cycle through all the options available that aren't id == 0
+	select_obj.find('option[value!=0]').each(function(){
+		var option=this;
+		// find the container in the navigation tree
+		var cont=$('#datacenters a[href$="container='+this.value+'"]');
+		// crawl up the navigation tree adding each level to the label
+		cont.parentsUntil('ul#datacenters.mktree').each(function(){
+			var cur_label=$(this).prev('a').text();
+			if(cur_label.trim()!=""){
+				option.text=cur_label+' > '+option.text;
+			}
+		});
+	});
+
+	// make a list of all the options so we can sort it
+	var my_options = select_obj.find("option");
+	// simple alphabetic sort of the newly mangled names
+	my_options.sort(function(a,b) {
+		if (a.text > b.text) return 1;
+		else if (a.text < b.text) return -1;
+		else return 0;
+	});
+	// replace the options on screen with the newly sorted list
+	select_obj.empty().append(my_options);
+	// move whatever has value of 0 to the top of the list. ie new, none, etc
+	select_obj.find('option[value=0]').prependTo(select_obj);
+	// set the value of the select back to the original value
+	select_obj.val(curval);
+}
+// END - Container Helper
 
 // DataCenter map / cabinet information
 function startmap(){
@@ -756,9 +805,9 @@ function startmap(){
 
 	// arrays used for tracking states
 	var stat;
-	var areas={'cabs':[],'zones':[]};
-	var defaultstate={'cabs':[],'zones':[]};
-	var currentstate={'cabs':[],'zones':[]};
+	var areas={'cabs':[],'panels':[],'zones':[]};
+	var defaultstate={'cabs':[],'panels':[],'zones':[]};
+	var currentstate={'cabs':[],'panels':[],'zones':[]};
 
 	context.globalCompositeOperation='destination-over';
 	context.save();
@@ -778,8 +827,8 @@ function startmap(){
 		async: false,
 		data: {dc: $('map[name=datacenter]').data('dc'), getobjects: ''}, 
 		success: function(data){
-			var temp={'cabs':[],'zones':[]}; // array of areas we're using
-			var temphilight={'cabs':[],'zones':[]}; // array of areas and their outline state
+			var temp={'cabs':[],'panels':[],'zones':[] }; // array of areas we're using
+			var temphilight={'cabs':[],'panels':[],'zones':[] }; // array of areas and their outline state
 
 			var map=$('.canvas > map');
 			for(var i in data.cab){
@@ -789,6 +838,12 @@ function startmap(){
 					temp.cabs.push({'CabinetID':thiscab.CabinetID,'MapX1':thiscab.MapX1,'MapX2':thiscab.MapX2,'MapY1':thiscab.MapY1,'MapY2':thiscab.MapY2});
 					temphilight.cabs[thiscab.CabinetID]=false;
 				}
+			};
+			for(var i in data.panel){
+				var thispanel=data.panel[i];
+				map.append(buildarea(thispanel));
+				temp.panels.push({'PanelID':thispanel.PanelID, 'MapX1':thispanel.MapX1,'MapX2':thispanel.MapX2,'MapY1':thispanel.MapY1,'MapY2':thispanel.MapY2});
+				temphilight.panels[thispanel.PanelID]=false;
 			};
 			for(var i in data.zone){
 				var thiszone=data.zone[i];
@@ -820,10 +875,12 @@ function startmap(){
 		$.each(currentstate,function(i,cabszones){
 			$.each(cabszones,function(x,obj){
 				if(obj){
-					if(i=='zones'){
-						Hilight($('.canvas > map > area[name=zone'+x+']'));
-					}else{
+					if(i=='panels'){
+						Hilight($('.canvas > map > area[name=panel'+x+']'));
+					}else if(i=='cabs'){
 						Hilight($('.canvas > map > area[name=cab'+x+']'));
+					} else {
+						Hilight($('.canvas > map > area[name=zone'+x+']'));
 					}
 				}	
 			});
@@ -844,11 +901,15 @@ function startmap(){
 				var y2=parseInt(obj.MapY2-zy1)*zoom;
 				// Check to see if we're over any of the objects we defined.
 				if(e.pageX>(cpos.left+x1) && e.pageX<(cpos.left+x2) && e.pageY>(cpos.top+y1) && e.pageY<(cpos.top+y2)){
-					var id=(i=='zones')?'ZoneID':'CabinetID';
-					if(i=='zones'){
+					if ( i=='zones' ) {
+						var id='ZoneID';
 						tempstate.zones[obj.ZoneID]=true;
-					}else{
+					} else if ( i=='cabs' ) {
+						var id='CabinetID';
 						tempstate.cabs[obj.CabinetID]=true;
+					} else {
+						var id='PanelID';
+						tempstate.panels[obj.PanelID]=true;
 					}
 				}
 			});
@@ -866,10 +927,11 @@ function startmap(){
 	function Hilight(obj,c){
 		//there has to be a better way to do this.  stupid js
 		area=obj.prop('coords').split(',');
-		var x=(area[0]);
-		var y=(area[1]);
-		var w=(area[2]-area[0]);
-		var h=(area[3]-area[1]);
+		var x=Number(area[0]);
+		var y=Number(area[1]);
+		var w=Number(area[2]-area[0]);
+		var h=Number(area[3]-area[1]);
+		var altname=obj.prop('alt');
 
 		// if color isn't given then just outline the object
 		if(typeof c=='undefined'){
@@ -886,17 +948,53 @@ function startmap(){
 			context.save();
 			context.fillStyle="rgba("+c.r+", "+c.g+", "+c.b+", 0.35)";
 			context.fillRect(x,y,w,h);
+			if ( js_outlinecabinets == true ) {
+				context.strokeRect(x,y,w,h);
+			}
+			if ( js_labelcabinets == true ) {
+				context.font="10px Arial Black";
+				context.fillStyle="#000000";
+				// Check to see if this cabinet is tall or wide.  Rotate text accordingly.
+				if ( h > w ) {
+					var canvW = $('canvas').width();
+					context.translate( canvW - 1, 0 );
+					context.rotate(3*Math.PI/2);
+					context.textAlign="right";
+					// In a rotated context, X and Y are now reversed and all combobulated
+					var newX = 0 - y - 2;
+					var newY = -canvW + x + 10;
+					context.fillText(altname, newX, newY );
+				} else {
+					context.fillText(altname, x+2, y+10 );
+				}
+			}
 			context.restore();
 		}
 	}
 
 	// Build the area objects
 	function buildarea(obj){
-		var zone=typeof obj.Location=='undefined';
-		var label=(zone)?obj.Description:obj.Location;
-		var name=(zone)?'zone'+obj.ZoneID:'cab'+obj.CabinetID;
-		var href=(zone)?'zone_stats.php?zone='+obj.ZoneID:'cabnavigator.php?cabinetid='+obj.CabinetID;
-		var row=(zone)?false:(obj.CabRowID==0)?false:true;
+		var panel=typeof(obj.PanelID)!=='undefined';
+		var zone=typeof(obj.Location)=='undefined' && (!panel);
+
+		if ( zone ) {
+			var label=obj.Description;
+			var name='zone'+obj.ZoneID;
+			var href='zone_stats.php?zone='+obj.ZoneID;
+			var row=false;
+		} else if ( panel ) {
+			var label=obj.PanelLabel;
+			var name='panel'+obj.PanelID;
+			var href='power_panel.php?PanelID='+obj.PanelID;
+			var row=false;
+			obj.ZoneID=0;
+		} else {
+			var label=obj.Location;
+			var name='cab'+obj.CabinetID;
+			var href='cabnavigator.php?cabinetid='+obj.CabinetID;
+			var row=obj.CabRowID==0?false:true;
+			obj.ZoneID=0;
+		}
 		var x1=(obj.MapX1-zx1)*zoom;
 		var x2=(obj.MapX2-zx1)*zoom;
 		var y1=(obj.MapY1-zy1)*zoom;
@@ -913,8 +1011,17 @@ function startmap(){
 				Hilight($('.canvas > map > area[name=cab'+i+']'),p);
 			}
 		});
-		maptitle.text(eval("stat."+state+"['title']"));
 
+		// This is what sets the base state of each map area, so add the power panel outlines and labels here
+		var panels=$('.canvas > map > area[name^=pan]');
+		if(panels.length > 0){
+			var c = {r:220, g:220, b:220 };
+			panels.each(function(){
+				Hilight($(this), c);
+			});
+		}
+
+		maptitle.text(eval("stat."+state+"['title']"));
 	}
 
 	// Draw the map and bind the change action to the menu
@@ -924,7 +1031,7 @@ function startmap(){
 }
 
 function bindmaptooltips(){
-	$('map[name="datacenter"]').on('mouseenter','area[name^="cab"]',function(){
+	$('map[name="datacenter"]').on('mouseenter','area[name^="cab"],area[name^="pan"]',function(){
 		var pos=$('.canvas').offset();
 		var coor=$(this).attr('coords').split(',');
 		var tx=pos.left+parseInt(coor[2])+17;
@@ -938,8 +1045,11 @@ function bindmaptooltips(){
 			'top':ty+'px'
 		}).addClass('arrow_left border cabnavigator tooltip').attr('id','tt').append('<span class="ui-icon ui-icon-refresh rotate"></span>');
 		var id=$(this).attr('href');
+		var startType=id.lastIndexOf('?')+1;
+		var endType=id.lastIndexOf('=');
+		var tipType=id.substring(startType,endType);
 		id=id.substring(id.lastIndexOf('=')+1,id.length);
-		$.post('scripts/ajax_tooltip.php',{tooltip: id, cab: 1}, function(data){
+		$.post('scripts/ajax_tooltip.php',{tooltip: id, type: tipType}, function(data){
 			tooltip.html(data);
 		});
 		$('body').append(tooltip);
@@ -1016,18 +1126,32 @@ function cabinetimagecontrols(){
 		posbtn.data('show',true);
 		setCookie('cabpos','hide');
 		$('.pos').hide();
-		$('table[id^=cabinet] > tbody > tr:nth-child(2)').hide();
 		$('table[id^=cabinet] th').prop('colspan',1);
-		$('table[id^=cabinet]').width('450px');
+		// rowview has a single rack width, cabnavigator has a double
+		if(window.location.href.indexOf('rowview')){
+			$('table[id^=cabinet]').width('225px');
+			$('#centeriehack > div.cabinet:first-child tbody > tr:nth-child(3)').hide();
+			$('#centeriehack > div.cabinet + div.cabinet tbody > tr:nth-child(2)').hide();
+		}else{
+			$('table[id^=cabinet]').width('450px');
+			$('table[id^=cabinet] > tbody > tr:nth-child(2)').hide();
+		}
 	}
 
 	function snoitisoPoN(){
 		posbtn.data('show',false);
 		setCookie('cabpos','show');
 		$('.pos').show();
-		$('table[id^=cabinet] > tbody > tr:nth-child(2)').show();
 		$('table[id^=cabinet] th').prop('colspan',2);
-		$('table[id^=cabinet]').width('501px');
+		// rowview has a single rack width, cabnavigator has a double
+		if(window.location.href.indexOf('rowview')){
+			$('table[id^=cabinet]').width('247px');
+			$('#centeriehack > div.cabinet:first-child tbody > tr:nth-child(3)').show();
+			$('#centeriehack > div.cabinet + div.cabinet tbody > tr:nth-child(2)').show();
+		}else{
+			$('table[id^=cabinet]').width('501px');
+			$('table[id^=cabinet] > tbody > tr:nth-child(2)').show();
+		}
 	}
 
 	// TODO : Clean this shit up.  Make it more generic 
@@ -1172,27 +1296,28 @@ $(document).ready(function(){
 					}
 				}
 			}
-//console.log(arr_weightbyu);
+// console.log(arr_weightbyu);
 			// one last time to go over all the devices to figure moment.
 			for(var x in data.device){
 				if(data.device[x].ParentDevice==0){
 					var devheight=data.device[x].Height/2;
 					var posfromfloor=(data.device[x].Position < rackbottom)?rackbottom - data.device[x].Position:data.device[x].Position;
-//console.log('totalmoment : '+totalmoment+' totalweight : '+totalweight);
+// console.log('totalmoment : '+totalmoment+' totalweight : '+totalweight);
 					totalmoment += arr_weightbyu[data.device[x].Position] * (posfromfloor + devheight);
 				}
 			}
 			var rackpositions=$('table#'+cabs[id]+' tr[id^=pos]');
-//console.log(rackpositions);
+// console.log(rackpositions);
 			var numu=rackpositions.length;
-//console.log('numu : '+numu);
+// console.log('numu : '+numu);
 			var tippingpoint=Math.round(totalmoment/totalweight);
-//console.log('tipping point : '+tippingpoint);
+// console.log('tipping point : '+tippingpoint);
 			var tpobj={id:"0"};
-			tpobj=(typeof rackpositions[tippingpoint]=='undefined')?tpobj:rackpositions[tippingpoint];
+			tpobj=(typeof rackpositions[tippingpoint]=='undefined')?tpobj:rackpositions[rackpositions.length-tippingpoint];
 			$('#tippingpoint').text(tpobj.id.replace('pos','')+'U');
+			// $('#tippingpoint').text(tippingpoint+'U');
 // Debug info
-//			console.log(cabs[id]+' totalmoment: '+totalmoment+' totalweight: '+totalweight+' tipping point: '+tippingpoint);
+			// console.log(cabs[id]+' totalmoment: '+totalmoment+' totalweight: '+totalweight+' tipping point: '+tippingpoint);
 		}).then(initdrag);
 	}
 });
@@ -1467,15 +1592,14 @@ function InsertDevice(obj){
 		// Color the rack for the department
 		var StartingU=$('#cabinet'+obj.Cabinet+' #pos'+obj.Position);
 
-		if(StartingU.hasClass('error')){
+		if(StartingU.find('td.error').length){
 			$('#legend > .legenditem > span.error').parent('div').removeClass('hide');
 		}
 
 		for(var i=0;obj.Height-1>=i;i++){
-			if(obj.Reservation){
-				StartingU.find('.pos').addClass('reserved');
-				$('#legend > .legenditem > span.reserved').parent('div').removeClass('hide');
-			}
+			var stName=obj.Status.split(' ').join('_');
+			StartingU.find('.pos').addClass(stName);
+			$('#legend > .legenditem > span.'+stName).parent('div').removeClass('hide');
 			StartingU.find('.pos').addClass('dept'+obj.Owner);
 			StartingU=StartingU.prev(); // move our pointer up a u
 		}
@@ -2527,7 +2651,7 @@ function LameLogDisplay(){
 					}
 					clist.change(function(){
 						// default note is associated with this color so set it
-						if($(this).data($(this).val())!=""){
+						if(typeof $(this).data($(this).val())!='undefined' && $(this).data($(this).val())!=""){
 							row.cnotes.children('input').val($(this).data($(this).val()));
 						}
 					});
@@ -2614,6 +2738,7 @@ function LameLogDisplay(){
 					$(this).unbind('click');
 					$(this).click(function(e){
 						e.preventDefault();
+						var pathlink=$(e.target).attr('href');
 						$.get($(e.target).attr('href'),{pathonly: ''}).done(function(data){
 							var modal=$('<div />', {id: 'modal'}).html('<div id="modaltext">'+data+'</div><br><div id="modalstatus"></div>').dialog({
 								appendTo: 'body',
@@ -2622,6 +2747,10 @@ function LameLogDisplay(){
 								close: function(){$(this).dialog('destroy');}
 							});
 							$('#modal').dialog("option", "width", $('#parcheos').width()+75);
+							$('#modal').parent().children(".ui-dialog-titlebar").append('<button class="ui-button ui-widget ui-state-default ui-corner-all ui-button-icon-only ui-dialog-titlebar-close" role="button" aria-disabled="false" title="print" style="right: 25px;" id="printpath"><span class="ui-button-icon-primary ui-icon ui-icon-print"></span><span class="ui-button-text">print</span></button>');
+							$('#printpath').on('click',function(e){
+								window.open(pathlink+"&pathonly&print",'_blank');
+							});
 						});
 					});
 				});

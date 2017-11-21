@@ -22,8 +22,8 @@
 		$dir=scandir($path);
 		foreach($dir as $i => $f){
 			if(is_file($path.DIRECTORY_SEPARATOR.$f) && round(filesize($path.DIRECTORY_SEPARATOR.$f) / 1024, 2)>=4 && $f!="serverrack.png" && $f!="gradient.png"){
-				$imageinfo=getimagesize($path.DIRECTORY_SEPARATOR.$f);
-				if(preg_match('/^image/i', $imageinfo['mime'])){
+				$mimeType=mime_content_type($path.DIRECTORY_SEPARATOR.$f);
+				if(preg_match('/^image/i', $mimeType)){
 					$imageselect.="<span>$f</span>\n";
 					$filesonly[]=$f;
 				}
@@ -319,7 +319,7 @@
 		foreach($dcaList as $dca) {
 			$customattrs.='<div>
 					<div><img src="images/del.gif"></div>
-					<div><input type="text" name="dcalabel[]" data='.$dca->AttributeID.' value="'.$dca->Label.'"></div>
+					<div><input type="text" name="dcalabel[]" data='.$dca->AttributeID.' value="'.$dca->Label.'" class="validate[required,custom[onlyLetterNumberConfigurationPage]]"></div>
 					<div><select name="dcatype[]" id="dcatype">';
 			foreach($dcaTypeList as $dcatype){
 				$selected=($dca->AttributeType==$dcatype)?' selected':'';
@@ -345,15 +345,29 @@
 		}
 	}
 
-        $dcaTypeSelector='<select name="dcatype[]" id="dcatype">';
-        if(count($dcaTypeList)>0){
-                foreach($dcaTypeList as $dcatype){
+	$dcaTypeSelector='<select name="dcatype[]" id="dcatype">';
+	if(count($dcaTypeList)>0){
+		foreach($dcaTypeList as $dcatype){
 			$selected=($dcatype=='string')?' selected':'';
-                        $dcaTypeSelector.="<option value=\"$dcatype\"$selected>$dcatype</option>";
-                }
-        }
-        $dcaTypeSelector.="</select>";
+			$dcaTypeSelector.="<option value=\"$dcatype\"$selected>$dcatype</option>";
+		}
+	}
+	$dcaTypeSelector.="</select>";
 
+	// Make our list of device statuses
+	$devstatusList='';
+	foreach(DeviceStatus::getStatusList(true) as $status){
+		$disabled=($status->Status == 'Reserved' || $status->Status == 'Disposed')?' readonly="readonly"':'';
+		$adddel=($disabled)?'../css/blank.gif':'del.gif';
+		$reserved=($disabled)?' reserved':'';
+		$devstatusList.='
+				<div data-StatusID='.$status->StatusID.'>
+					<div class="addrem'.$reserved.'"><img src="images/'.$adddel.'" height=20 width=20></div>
+					<div><input type="text" class="validate[required,custom[onlyLetterNumberSpacesConfigurationPage]]" value="'.$status->Status.'"'.$disabled.'></div>
+					<div><div class="cp"><input type="text" class="color-picker" name="StatusColor" value="'.$status->ColorCode.'"></div></div>
+				</div>
+		';
+	}
 
 	// Figure out what the URL to this page
 	$href="";
@@ -391,6 +405,7 @@
   <link rel="stylesheet" href="css/jquery-ui.css" type="text/css">
   <link rel="stylesheet" href="css/jquery.ui.multiselect.css" type="text/css">
   <link rel="stylesheet" href="css/uploadifive.css" type="text/css">
+  <link rel="stylesheet" href="css/validationEngine.jquery.css" type="text/css">
   <!--[if lt IE 9]>
   <link rel="stylesheet"  href="css/ie.css" type="text/css">
   <![endif]-->
@@ -400,6 +415,8 @@
   <script type="text/javascript" src="scripts/jquery.uploadifive.js"></script>
   <script type="text/javascript" src="scripts/jquery.miniColors.js"></script>
   <script type="text/javascript" src="scripts/jquery.ui.multiselect.js"></script>
+  <script type="text/javascript" src="scripts/jquery.validationEngine-en.js"></script>
+  <script type="text/javascript" src="scripts/jquery.validationEngine.js"></script>
   <script type="text/javascript">
 	$(document).ready(function(){
 		// ToolTips
@@ -481,7 +498,7 @@
 							if($('#imageselection #preview').attr('image')!=""){
 								$('#PDFLogoFile').val($('#imageselection #preview').attr('image'));
 							}
-							$(this).dialog("close");
+							$(this).dialog("destroy");
 						}
 					},
 					close: function(){
@@ -635,6 +652,8 @@
 				}
 			});
 
+			$('.main form').validationEngine();
+
 		}
 
 		var blankmediarow=$('<div />').html('<div><img src="images/del.gif"></div><div><input id="mediatype[]" name="mediatype[]" type="text"></div><div><select name="mediacolorcode[]"></select></div>');
@@ -739,6 +758,10 @@
 				}
 			});
 		}
+
+		
+
+
 
 		// Cabling - Cable Colors
 
@@ -927,7 +950,7 @@
 		});
 
 		// device custom attribute rows
-		var blankdcarow=$('<div />').html('<div><img src="images/del.gif"></div><div><input type="text" name="dcalabel[]"></div><div><select name="dcatype[]" id="dcatype"></select></div></div><div><input type="checkbox" name="dcarequired[]"></div><div><input type="checkbox" name=dcaalldevices[]"></div><div><input type="text" name="dcavalue[]"></div>');
+		var blankdcarow=$('<div />').html('<div><img src="images/del.gif"></div><div><input type="text" name="dcalabel[]" class="validate[required,custom[onlyLetterNumberConfigurationPage]]"></div><div><select name="dcatype[]" id="dcatype"></select></div></div><div><input type="checkbox" name="dcarequired[]"></div><div><input type="checkbox" name=dcaalldevices[]"></div><div><input type="text" name="dcavalue[]"></div>');
 
 		// row is expected to be the row object and data to be a valid object
 		function updatecarow(row,data){
@@ -1058,7 +1081,7 @@
 						revertdefault(row,true);
 					} else {
 						// attempt to update
-						if((row.addrem.prop('id')=='newline' && row.Label.val()!='') || row.addrem.prop('id')!='newline'){
+						if(((row.addrem.prop('id')=='newline' && row.Label.val()!='') || row.addrem.prop('id')!='newline' ) && $(".main form").validationEngine('validate')){
 							$.post('',{dcal: dcal.val(), dcaid: dcal.attr('data'), dcat: dcat.val(), dcar: dcar.prop('checked'), dcaa: dcaa.prop('checked'), dcav: dcavtosend}).done(function(data){
 								if(data.trim()=='f'){ //fail
 									revertdefault(row,true);
@@ -1163,6 +1186,165 @@
                         });
 		  }
                 }
+
+		function bindstatusrow(div) {
+			var row=$(div);
+			var addrem=row.find('div:first-child:not(.cp)');
+			var dsl=row.find('div:nth-child(2) input');
+			var dsc=row.find('div:nth-child(3) input');
+			row.addrem=addrem;
+			row.Label=dsl;
+			row.Color=dsc;
+			row.ID=div.dataset['statusid'];
+			// save the row object back to the div for quick access later
+			div.row=row;
+
+			// Create click target for add / remove row
+			if(!addrem.hasClass('newstatus') && !addrem.hasClass('reserved')){
+				addrem.click(function(e){
+					removestatus(e);
+				});
+			}else if(addrem.hasClass('newstatus')){
+				addrem.click(function(e){
+					addstatus(e);
+				});
+			}
+
+			// Bind update event to the color change selection
+			dsc.blur(updatestatus);
+
+			// This is to keep an enter from submitting the form
+			row.find(':input:not(.newstatus >)').change(updatestatus).keypress(function(e){
+				if(e.keyCode==10 || e.keyCode==13){
+					e.preventDefault();
+					updatestatus(e);
+				}
+			});
+			row.find('.newstatus > :input').keypress(function(e){
+				if(e.keyCode==10 || e.keyCode==13){
+					e.preventDefault();
+					addrem.trigger('click');
+				}
+			});
+		}
+
+		function createstatusrow(statusobject){
+			var newrow=$('<div>').attr('data-StatusID',statusobject.StatusID);
+			newrow.append($('<div>').addClass('addrem').append($('<img>').attr({'src':'images/del.gif','height':20,'width':20})));
+			newrow.append($('<div>').append($('<input>').addClass('validate[required,custom[onlyLetterNumberSpacesConfigurationPage]]').val(statusobject.Status)));
+			newrow.append($('<div>').append($('<div>').addClass('cp').append($('<input>').attr({'type':'text','name':'StatusColor'}).val(statusobject.ColorCode).addClass('color-picker'))));
+
+			return newrow;
+		}
+
+		$('#devstatus > div ~ div > div:first-child').each(function(){
+			bindstatusrow(this.parentElement);
+		});
+
+		function StatusFlashGreen(row){
+			row.effect('highlight', {color: 'lightgreen'}, 2500);
+			row.Label.effect('highlight', {color: 'lightgreen'}, 2500);
+		}
+		function StatusFlashRed(row){
+			row.effect('highlight', {color: 'salmon'}, 1500);
+			row.Label.effect('highlight', {color: 'salmon'}, 1500);
+		}
+
+		function addstatus(e){
+			var row=e.currentTarget.parentElement.row;
+			if(row.Label.val()!='' && $(".main form").validationEngine('validate')){
+				$.ajax({
+					type: 'PUT',
+					url: 'api/v1/devicestatus/'+row.Label.val(),
+					async: false,
+					dataType: "JSON",
+					data: null,
+					success: function(data){
+						if(!data.error){
+							for(var x in data.devicestatus){
+								row.Label.val('');
+								var newrow=createstatusrow(data.devicestatus[x]);
+								bindstatusrow(newrow[0]);
+								newrow.insertBefore(row);
+								newrow.find(".color-picker").minicolors({
+									letterCase: 'uppercase',
+									change: function(hex, rgb){
+										colorchange($(this).val(),$(this).attr('id'));
+									}
+								});
+								// Had to reference the row inside the row because I don't know
+								StatusFlashGreen(newrow[0].row);
+							}
+						}else{
+							StatusFlashRed(row);
+						}
+					}
+				});
+			}else{
+				console.log('clicked add, label is blank, do nothing');
+			}
+		}
+
+		function removestatus(e){
+			var row=e.currentTarget.parentElement.row;
+			$.ajax({
+				type: 'DELETE',
+				url: 'api/v1/devicestatus/'+row.ID,
+				async: false,
+				dataType: "JSON",
+				data: null,
+				success: function(data){
+					if(!data.error){
+						// remove row from dom
+						row.effect('explode', {}, 500, function(){
+							row.remove();
+						});
+					}else{
+						StatusFlashRed(row);
+					}
+				},
+				error: function(data){
+					if(!data.error){
+						StatusFlashRed(row);
+					}else{
+						StatusFlashRed(row);
+					}
+				}
+			});
+		}
+
+		function updatestatus(e){
+			if(e.currentTarget.classList.contains('color-picker')){
+				var row=e.currentTarget.parentElement.parentElement.parentElement.parentElement.row;
+			}else{
+				var row=e.currentTarget.parentElement.parentElement.row;
+			}
+			if(row.Label.val()!='' && $(".main form").validationEngine('validate')){
+				$.ajax({
+					type: 'POST',
+					url: 'api/v1/devicestatus/'+row.ID,
+					async: false,
+					dataType: "JSON",
+					data: {'StatusID':row.ID,'Status':row.Label.val(),'ColorCode':row.Color.val()},
+					success: function(data){
+						if(!data.error){
+							StatusFlashGreen(row);
+						}else{
+							StatusFlashRed(row);
+						}
+					},
+					error: function(data){
+						if(!data.error){
+							StatusFlashRed(row);
+						}else{
+							StatusFlashRed(row);
+						}
+					}
+				});
+			}else{
+				console.log('tried to change label to be blank, do nothing');
+			}
+		}
 
 		// Reporting - Utilities
 
@@ -1315,6 +1497,7 @@ echo '<div class="main">
 			<li><a href="#cc">',__("Cabling"),'</a></li>
 			<li><a href="#dca">',__("Custom Device Attributes"),'</a></li>
 			<li><a href="#ldap">',__("LDAP"),'</a></li>
+			<li><a href="#saml">',__("SAML"),'</a></li>
 			<li><a href="#preflight">',__("Pre-Flight Check"),'</a></li>
 		</ul>
 		<div id="general">
@@ -1555,12 +1738,6 @@ echo '<div class="main">
 					<div></div>
 				</div>
 				<div>
-					<div><label for="ReservedColor">',__("Reserved Devices"),'</label></div>
-					<div><div class="cp"><input type="text" class="color-picker" name="ReservedColor" value="',$config->ParameterArray["ReservedColor"],'"></div></div>
-					<div><button type="button">&lt;--</button></div>
-					<div><span>',strtoupper($config->defaults["ReservedColor"]),'</span></div>
-				</div>
-				<div>
 					<div><label for="FreeSpaceColor">',__("Unused Spaces"),'</label></div>
 					<div><div class="cp"><input type="text" class="color-picker" name="FreeSpaceColor" value="',$config->ParameterArray["FreeSpaceColor"],'"></div></div>
 					<div><button type="button">&lt;--</button></div>
@@ -1591,6 +1768,25 @@ echo '<div class="main">
 					<div><select id="AppendCabDC" name="AppendCabDC" defaultvalue="',$config->defaults["AppendCabDC"],'" data="',$config->ParameterArray["AppendCabDC"],'">
 							<option value="disabled">',__("Just Devices"),'</option>
 							<option value="enabled">',__("Show Datacenter and Cabinet"),'</option>
+						</select>
+					</div>
+				</div>
+			</div> <!-- end table -->
+			<h3>',__("Cabinets"),'</h3>
+			<div class="table">
+				<div>
+					<div><label for="OutlineCabinets">',__("Draw Cabinet Outlines"),'</label></div>
+					<div><select id="OutlineCabinets" name="OutlineCabinets" defaultvalue="',$config->defaults["OutlineCabinets"],'" data="',$config->ParameterArray["OutlineCabinets"],'">
+							<option value="disabled">',__("Disabled"),'</option>
+							<option value="enabled">',__("Enabled"),'</option>
+						</select>
+					</div>
+				</div>
+				<div>
+					<div><label for="LabelCabinets">',__("Add Cabinet Labels"),'</label></div>
+					<div><select id="LabelCabinets" name="LabelCabinets" defaultvalue="',$config->defaults["LabelCabinets"],'" data="',$config->ParameterArray["LabelCabinets"],'">
+							<option value="disabled">',__("Disabled"),'</option>
+							<option value="enabled">',__("Enabled"),'</option>
 						</select>
 					</div>
 				</div>
@@ -1891,14 +2087,26 @@ echo '<div class="main">
 				',$customattrs,'
 				<div>
 					<div id="newline"><img title="',__("Add new row"),'" src="images/add.gif"></div>
-					<div><input type="text" name="dcalabel[]"></div>
+					<div><input type="text" name="dcalabel[]" class="validate[optional,custom[onlyLetterNumberConfigurationPage]]"></div>
 					<div>',$dcaTypeSelector,'</div>
 					<div><input type="checkbox" name="dcarequired[]"></div>
 					<div><input type="checkbox" name="dcaalldevices[]"></div>
 					<div><input type="text" name="dcavalue[]"></div>
 				</div>
 			</div>
-
+			<h3>',__("Device Status"),'</h3>
+			<div class="table" id="devstatus">
+				<div>
+					<div></div>
+					<div>Status</div>
+					<div>Color</div>
+				</div>
+				',$devstatusList,'
+				<div>
+					<div class="newstatus"><img title="',__("Add new row"),'" src="images/add.gif"></div>
+					<div class="newstatus"><input type="text" name="devstatus[]" class="validate[optional,custom[onlyLetterNumberSpacesConfigurationPage]]"></div>
+				</div>
+			</div>
 		</div>
 		<div id="ldap">
 			<h3>',__("LDAP Authentication and Authorization Configuration"),'</h3>
@@ -1972,6 +2180,96 @@ echo '<div class="main">
 				</div>
 			</div>
 
+		</div>
+			<div id="saml">
+			<h3>',__("SAML Authentication Configuration"),'</h3>
+			<div class="table">
+				<div>
+					<div><label for="SAMLStrict">',__("Strict"),'</label></div>
+					<div><select id="SAMLStrict" name="SAMLStrict" defaultValue="',$config->defaults["SAMLStrict"],'" data="', $config->ParameterArray["SAMLStrict"],'">
+							<option value="disabled">',__("Disabled"),'</option>
+							<option value="enabled">',__("Enabled"),'</option>
+						</select>
+					</div>
+				</div>
+				<div>
+					<div><label for="SAMLDebug">',__("Debug"),'</label></div>
+				<div><select id="SAMLDebug" name="SAMLDebug" defaultValue="',$config->defaults["SAMLDebug"],'" data="', $config->ParameterArray["SAMLDebug"],'">
+							<option value="disabled">',__("Disabled"),'</option>
+							<option value="enabled">',__("Enabled"),'</option>
+						</select>
+					</div>
+				</div>
+				<div>
+					<div><label for="SAMLBaseURL">',__("Base URL"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLBaseURL"],'" name="SAMLBaseURL" value="',$config->ParameterArray["SAMLBaseURL"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLShowSuccessPage">',__("Show Success Page"),'</label></div>
+					<div><select id="SAMLShowSuccessPage" name="SAMLShowSuccessPage" defaultValue="',$config->defaults["SAMLShowSuccessPage"],'" data="', $config->ParameterArray["SAMLShowSuccessPage"],'">
+							<option value="disabled">',__("Disabled"),'</option>
+							<option value="enabled">',__("Enabled"),'</option>
+						</select>
+					</div>
+				</div>
+			</div>
+			<h3>',__("SAML Service Provider Configuration"),'</h3>
+			<div class="table">
+				<div>
+					<div><label for="SAMLspentityId">',__("Entity ID"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLspentityId"],'" name="SAMLspentityId" value="',$config->ParameterArray["SAMLspentityId"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLspacsURL">',__("ACS URL"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLspacsURL"],'" name="SAMLspacsURL" value="',$config->ParameterArray["SAMLspacsURL"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLspslsURL">',__("SLS URL"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLspslsURL"],'" name="SAMLspslsURL" value="',$config->ParameterArray["SAMLspslsURL"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLspx509cert">',__("x509 Certificate"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLspx509cert"],'" name="SAMLspx509cert" value="',$config->ParameterArray["SAMLspx509cert"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLspprivateKey">',__("Private Key"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLspprivateKey"],'" name="SAMLspprivateKey" value="',$config->ParameterArray["SAMLspprivateKey"],'"></div>
+				</div>
+			</div>
+			<h3>',__("SAML Identity Provider Configuration"),'</h3>
+			<div class="table">
+				<div>
+					<div><label for="SAMLidpentityId">',__("Entity ID"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLidpentityId"],'" name="SAMLidpentityId" value="',$config->ParameterArray["SAMLidpentityId"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLidpssoURL">',__("SSO URL"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLidpssoURL"],'" name="SAMLidpssoURL" value="',$config->ParameterArray["SAMLidpssoURL"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLidpslsURL">',__("SLS URL"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLidpslsURL"],'" name="SAMLidpslsURL" value="',$config->ParameterArray["SAMLidpslsURL"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLidpcertFingerprint">',__("Certificate Fingerprint"),'</label></div>
+					<div><input type="text" size="50" defaultvalue="',$config->defaults["SAMLidpcertFingerprint"],'" name="SAMLidpcertFingerprint" value="',$config->ParameterArray["SAMLidpcertFingerprint"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLidpcertFingerprintAlgorithm">',__("Certificate Fingerprint Algorithm"),'</label></div>
+					<div><input type="text" size="20" defaultvalue="',$config->defaults["SAMLidpcertFingerprintAlgorithm"],'" name="SAMLidpcertFingerprintAlgorithm" value="',$config->ParameterArray["SAMLidpcertFingerprintAlgorithm"],'"></div>
+				</div>
+			</div>
+			<h3>',__("SAML Account Configuration"),'</h3>
+			<div class="table">
+				<div>
+					<div><label for="SAMLaccountPrefix">',__("Remove Account Prefix"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLaccountPrefix"],'" name="SAMLaccountPrefix" value="',$config->ParameterArray["SAMLaccountPrefix"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLaccountSuffix">',__("Remove Account Suffix"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLaccountSuffix"],'" name="SAMLaccountSuffix" value="',$config->ParameterArray["SAMLaccountSuffix"],'"></div>
+				</div>
+			</div>
 		</div>
 		<div id="preflight">
 			<iframe src="preflight.inc.php"></iframe>

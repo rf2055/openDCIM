@@ -2,7 +2,7 @@
 /* All functions contained herein will be general use functions */
 
 /* Create a quick reference for datacenter data */
-$_SESSION['datacenters']=Datacenter::GetDCList(true);
+$_SESSION['datacenters']=DataCenter::GetDCList(true);
 
 /* Generic html sanitization routine */
 
@@ -129,9 +129,9 @@ function redirect($target = null) {
 		}
 	}
 	if(array_key_exists('HTTPS', $_SERVER) && $_SERVER["HTTPS"]=='on') {
-		$url = "https://".$_SERVER['HTTP_HOST'].$target;
+		$url = "https://".$_SERVER['SERVER_NAME'].$target;
 	} else {
-		$url = "http://".$_SERVER['HTTP_HOST'].$target;
+		$url = "http://".@$_SERVER['SERVER_NAME'].$target;
 	}
 	return $url;
 }
@@ -168,7 +168,7 @@ if(!function_exists("objArraySearch")){
     {
         foreach($array as $arrayInf) {
             if($arrayInf->{$index} == $value) {
-                return $false;
+                return true;
             }
         }
         return false;
@@ -212,11 +212,18 @@ function extendsql($prop,$val,&$sql,$loose){
 	if($sql){
 		$sql.=" AND $prop$method";
 	}else{
-		$sql.=" WHERE $prop$method";
+		$sql.="WHERE $prop$method";
 	}
 }
 
-
+function attribsql($attrib,$val,&$sql,$loose){
+	$method=($loose)?"AttributeID=$attrib AND Value LIKE \"%$val%\"":"AttributeID=$attrib AND Value=\"$val\"";
+	if($sql){
+		$sql .= " AND DeviceID IN (SELECT DeviceID FROM fac_DeviceCustomValue WHERE $method)";
+	} else {
+		$sql = "WHERE $method";
+	}
+}
 
 /*
  * Define multibyte string functions in case they aren't present
@@ -627,6 +634,18 @@ function generatePatterns($patSpecs, $count) {
     return $patternList;
 }
 
+// Deal with pesky international number formats that mysql doesn't like
+function float_sqlsafe($number){
+	$locale=localeconv();
+	if($locale['thousands_sep']=='.'){
+		$number=str_replace('.','',$number);
+	}
+	if($locale['decimal_point']==','){
+		$number=str_replace(',','.',$number);
+	}
+	return $number;
+}
+
 function locale_number( $number, $decimals=2 ) {
     $locale = localeconv();
     return number_format($number,$decimals,
@@ -783,6 +802,16 @@ if(!function_exists("buildNavTreeHTML")){
 	to the db.inc.php file.
 */
 
+/*
+	If we are using Saml authentication, go ahead and figure out who
+	we are.  It may be needed for the installation.
+*/
+
+if( AUTHENTICATION=="Saml" && !isset($_SESSION['userid']) ){
+	header("Location: ".redirect('saml/login.php'));
+	exit;
+}
+
 if(isset($devMode)&&$devMode){
 	// Development mode, so don't apply the upgrades
 }else{
@@ -802,6 +831,7 @@ if( AUTHENTICATION=="Oauth" && !isset($_SESSION['userid']) && php_sapi_name()!="
 	header("Location: ".redirect('oauth/login.php'));
 	exit;
 }
+
 
 // Just to keep things from getting extremely wonky and complicated, even though this COULD be in one giant
 // if/then/else stanza, I'm breaking it into two
@@ -824,8 +854,11 @@ if(!People::Current()){
 	if(AUTHENTICATION=="Oauth"){
 		header("Location: ".redirect('oauth/login.php'));
 		exit;
+	} elseif ( AUTHENTICATION=="Saml"){
+		header("Location: ".redirect('saml/login.php'));
+		exit;
 	} elseif ( AUTHENTICATION=="LDAP" && !isset($loginPage) ) {
-		header("Location: ".redirect($config->ParameterArray['InstallURL'].'login_ldap.php'));
+		header("Location: ".redirect('login_ldap.php'));
 		exit;
 	} elseif(AUTHENTICATION=="Apache"){
 		print "<h1>You must have some form of Authentication enabled to use openDCIM.</h1>";
@@ -883,6 +916,8 @@ if ( $person->WriteAccess ) {
 	$wamenu[__("Template Management")][]='<a href="image_management.php#pictures"><span>'.__("Device Image Management").'</span></a>';
 }
 if ($person->BulkOperations) {
+	$wamenu[__("Bulk Importer")][]='<a href="bulk_container.php"><span>'.__("Import Container/Datacenter/Zone/Row").'</span></a>';
+	$wamenu[__("Bulk Importer")][]='<a href="bulk_cabinet.php"><span>'.__("Import New Cabinets").'</span></a>';
 	$wamenu[__("Bulk Importer")][]='<a href="bulk_importer.php"><span>'.__("Import New Devices").'</span></a>';
 	$wamenu[__("Bulk Importer")][]='<a href="bulk_network.php"><span>'.__("Import Network Connections").'</span></a>';
 	$wamenu[__("Bulk Importer")][]='<a href="bulk_power.php"><span>'.__("Import Power Connections").'</span></a>';
@@ -891,8 +926,9 @@ if ($person->BulkOperations) {
 if ( $person->SiteAdmin ) {
 	$samenu[__("Template Management")][]='<a href="device_manufacturers.php"><span>'.__("Edit Manufacturers").'</span></a>';
 	$samenu[__("Template Management")][]='<a href="repository_sync_ui.php"><span>'.__("Repository Sync").'</span></a>';
-	$samenu[__("Supplies Management")][]='<a href="supplybin.php"><span>'.__("Manage Supply Bins").'</span></a>';
-	$samenu[__("Supplies Management")][]='<a href="supplies.php"><span>'.__("Manage Supplies").'</span></a>';
+	$samenu[__("Materiel Management")][]='<a href="supplybin.php"><span>'.__("Manage Supply Bins").'</span></a>';
+	$samenu[__("Materiel Management")][]='<a href="supplies.php"><span>'.__("Manage Supplies").'</span></a>';
+	$samenu[__("Materiel Management")][]='<a href="disposition.php"><span>'.__("Manage Disposal Methods").'</span></a>';
 	$samenu[__("Infrastructure Management")][]='<a href="datacenter.php"><span>'.__("Edit Data Centers").'</span></a>';
 	$samenu[__("Infrastructure Management")][]='<a href="container.php"><span>'.__("Edit Containers").'</span></a>';
 	$samenu[__("Infrastructure Management")][]='<a href="zone.php"><span>'.__("Edit Zones").'</span></a>';
@@ -1060,6 +1096,31 @@ function BuildCabinet($cabid,$face="front"){
 
 	return $htmlcab;
 }
+}
+
+function getNameFromNumber($num){
+	// Used to figure out what the Excel column name would be for a given 0-indexed array of data
+	$numeric = ($num-1)%26;
+	$letter = chr(65+$numeric);
+	$num2 = intval(($num-1) / 26);
+	if ( $num2 > 0 ) {
+		return getNameFromNumber($num2) . $letter;
+	} else {
+		return $letter;
+	}
+}
+
+function mangleDate($dateString) {
+	// Take various formats of the date that may have been stored in the db and present them in a nice manner according to ISO8601 Format
+	if ( $dateString == null ) {
+		return "";
+	}
+
+	if ( date( "Y-m-d", $dateString ) == "1969-12-31" ) {
+		return "";
+	} else {
+		return date( "Y-m-d", $dateString );
+	}
 }
 
 class JobQueue {

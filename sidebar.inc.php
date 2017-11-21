@@ -2,7 +2,9 @@
 <br>
 <form action="search.php" method="post">
 <input type="hidden" name="key" value="label">
-<?php echo'
+<?php
+	$attrList=DeviceCustomAttribute::GetDeviceCustomAttributeList(true);
+	echo'
 <label for="searchname">',__("Search by Name:"),'</label><br>
 <input class="search" id="searchname" name="search"><button class="iebug" type="submit"><img src="css/searchbutton.png" alt="search"></button>
 </form>
@@ -21,10 +23,13 @@
 	<option value="project">',__("Project"),'</option>
 	<option value="model">',__("Device Model"),'</option>
 	<option value="ip">',__("PrimaryIP"),'</option>
-	<option value="cattr">',__("Custom Attribute"),'</option>
-	<option value="notes">',__("Notes"),'</option>
-</select>';
+	<option value="notes">',__("Notes"),'</option>';
+
+	foreach($attrList as $ca){
+		print "\t<option value=\"$ca->Label\">CustomAttr: $ca->Label</option>\n";
+	}
 ?>
+</select>
 <div class="ui-icon ui-icon-close"></div>
 </form>
   <script type="text/javascript">
@@ -139,7 +144,7 @@ $('#searchname').width($('#sidebar').innerWidth() - $('#searchname ~ button').ou
 addlookup($('#searchname'),'name');
 $('#searchadv ~ select[name="key"]').change(function(){
 	addlookup($('#searchadv'),$(this).val())
-}).outerHeight($('#searchadv').outerHeight());
+}).outerHeight($('#searchadv').outerHeight()).outerWidth(157);
 
 // Really long cabinet / zone / dc combinations are making the screen jump around.
 // If they make this thing so big it's unusable, fuck em.
@@ -235,12 +240,19 @@ $(document).ready(function(){
 			}
 		});
 	});
+<?php
+	// No navigation menu if you're not logged in, yet
+	if ( ! strpos( $_SERVER['SCRIPT_NAME'], "login" ) ) {
+?>
 	$.get('scripts/ajax_navmenu.php').done(function(data){
 		$('#nav_placeholder').replaceWith(data);
 		if(document.readyState==="complete" && $('#datacenters .bullet').length==0){
 			window.convertTrees();
 		}
 	});
+<?php
+	}
+?>
 });
 
 </script>

@@ -8,7 +8,7 @@
 		$tests['os']['state']="good";
 		$tests['os']['message']='OS Detected: '.PHP_OS;
 	}else{
-		$tests['os']['state']="fail";
+		$tests['os']['state']="good";
 		$tests['os']['message']='OS Detected: '.PHP_OS.' We strongly recommend against running this on anything other than Linux.';
 	}
 
@@ -65,12 +65,28 @@
 		$tests['snmp']['message']='PHP is missing the <a href="http://php.net/manual/book.snmp.php">snmp extension</a>. Please install it.';
 	}
 
+	if(extension_loaded('gd')) {
+		$tests['gd']['state']="good";
+		$tests['gd']['message']='';
+	}else{
+		$tests['gd']['state']="warning";
+		$tests['gd']['message']='PHP is missing the <a href="http://php.net/manual/en/book.image.php">gd extension</a>. Please install it. Some reports will fail if this isn\'t present';
+	}
+
 	if(function_exists('utf8_decode')){
 		$tests['php-xml']['state']="good";
 		$tests['php-xml']['message']='';
 	}else{
 		$tests['php-xml']['state']="fail";
-		$tests['php-xml']['message']='PHP is missing the <a href="http://us3.php.net/manual/en/book.xml.php">XML Parser</a>.  Please install it.<br><br>For CENT/RHEL yum -y intall php-xml';
+		$tests['php-xml']['message']='PHP is missing the <a href="http://us3.php.net/manual/en/book.xml.php">XML Parser</a>.  Please install it.<br><br>For CENT/RHEL yum -y install php-xml';
+	}
+
+	if(extension_loaded('zip')) {
+		$tests['zip']['state']="good";
+		$tests['zip']['message']='';
+	}else{
+		$tests['zip']['state']="warning";
+		$tests['zip']['message']='PHP is missing the <a href="http://php.net/manual/en/book.zip.php">zip extension</a>. Please install it. This is necessary for the bulk import functions to operate correctly.';
 	}
 
 	$tests['pdo']['message']='';
@@ -138,6 +154,13 @@
 			}else{
 				$tests['Remote User']['message']='Click <a href="oauth/login.php">here</a> to authenticate via Oauth';
 			}
+		}elseif(AUTHENTICATION=="Saml"){
+			if(isset($_SESSION['userid'])){
+				$tests['Remote User']['state']="good";
+				$tests['Remote User']['message']='Authenticated as UserID='.$_SESSION['userid'];
+			}else{
+				$tests['Remote User']['message']='Click <a href="saml/login.php">here</a> to authenticate via Saml';
+			}
 		}elseif(AUTHENTICATION=="LDAP") {
 			if(isset($_SESSION['userid'])){
 				$tests['Remote User']['state']="good";
@@ -157,6 +180,23 @@
 		$errors++;
 	}
 
+	// Do a quick check for file rights.
+	$all_paths_writable=true;
+	$wantedpaths=array('pictures','drawings','vendor'.DIRECTORY_SEPARATOR.'mpdf'.DIRECTORY_SEPARATOR.'mpdf'.DIRECTORY_SEPARATOR.'ttfontdata');
+
+	foreach($wantedpaths as $i => $file){
+		$all_paths_writable=(is_writable('.'.DIRECTORY_SEPARATOR.$file) && $all_paths_writable)?true:false;
+	}
+
+	if($all_paths_writable) {
+		$tests['directory_rights']['state']="good";
+		$tests['directory_rights']['message']='All required directories are writable';
+	}else{
+		$tests['directory_rights']['state']="fail";
+		$tests['directory_rights']['message']='Some paths are not writable please check <a href="rightscheck.php" target="_new">rightscheck.php</a> and correct any issues present.';
+	}
+
+
 	//Adding in some preliminary support for nginix
 	if(preg_match("/apache/i", $_SERVER['SERVER_SOFTWARE'])){
 		if(function_exists('apache_get_modules')){
@@ -164,7 +204,7 @@
 				$tests['mod_rewrite']['state']="good";
 				$tests['mod_rewrite']['message']='mod_rewrite detected';
 				$tests['api_test']['state']="fail";
-				$tests['api_test']['message']="Apache does not appear to be rewriting URLs correctly. Check your AllowOverride directive and change to 'AllowOverride All'";
+				$tests['api_test']['message']="Apache does not appear to be rewriting URLs correctly. Check your AllowOverride directive and change to 'AllowOverride All' or check the RewriteBase parameter in api/v1/.htaccess and api/test/.htaccess";
 			}else{
 				$tests['mod_rewrite']['state']="fail";
 				$tests['mod_rewrite']['message']='Apache is missing the <a href="http://httpd.apache.org/docs/current/mod/mod_rewrite.html">mod_rewrite</a> module and it is required for the API to function correctly.  Please install it.';

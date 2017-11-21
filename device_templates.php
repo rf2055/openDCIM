@@ -56,10 +56,10 @@
 		$template->TemplateID=$_POST['TemplateID'];
 		if($template->GetTemplateByID()){
 			// First deal with the case that we are transferring
-			if($template->TemplateID!=$_POST['transferid'] && $_POST['transferid']==0){
+			if($template->TemplateID!=$_POST['transferid'] && $_POST['transferid']!=0){
 				// We should do this in bulk,  this has potential to be a real time sink
 				foreach(Device::GetDevicesByTemplate($template->TemplateID) as $dev){
-					$dev->TemplateID->$_POST['transferid'];
+					$dev->TemplateID=$_POST['transferid'];
 					$dev->UpdateDevice();
 				}
 			}
@@ -137,7 +137,7 @@
 				$tport->Label=isset($_POST["label".$i])?$_POST["label".$i]:"";
 				$tport->MediaID=(isset($_POST["mt".$i]) && $_POST["mt".$i]>0)?$_POST["mt".$i]:0;
 				$tport->ColorID=(isset($_POST["cc".$i]) && $_POST["cc".$i]>0)?$_POST["cc".$i]:0;
-				$tport->PortNotes=isset($_POST["portnotes".$i])?$_POST["portnotes".$i]:"";
+				$tport->Notes=isset($_POST["portnotes".$i])?$_POST["portnotes".$i]:"";
 				$status=($tport->CreatePort())?$status:__("Error updating template ports");
 			}
 			$template->DeletePowerPorts();
@@ -147,7 +147,7 @@
 				$tport->TemplateID=$template->TemplateID;
 				$tport->PortNumber=$i;
 				$tport->Label=isset($_POST["powerlabel".$i])?$_POST["powerlabel".$i]:"";
-				$tport->PortNotes=isset($_POST["powerportnotes".$i])?$_POST["powerportnotes".$i]:"";
+				$tport->Notes=isset($_POST["powerportnotes".$i])?$_POST["powerportnotes".$i]:"";
 				$status=($tport->CreatePort())?$status:__("Error updating template power connections");
 			}
 			return $status;
@@ -314,8 +314,8 @@
 	foreach($dir as $i => $f){
 		if(is_file($path.DIRECTORY_SEPARATOR.$f)){
 			// Suppress the getimagesize because it will error out on non-image files
-			@$imageinfo=getimagesize($path.DIRECTORY_SEPARATOR.$f);
-			if(preg_match('/^image/i', $imageinfo['mime'])){
+			$mimeType=mime_content_type($path.DIRECTORY_SEPARATOR.$f);
+			if(preg_match('/^image/i', $mimeType)){
 				$imageselect.="<span>$f</span>\n";
 			}
 		}
@@ -505,6 +505,67 @@
 				// Fill in the ports table
 				buildportstable();
 
+				var generateportnames=$('<select>').append($('<option>'));
+				$.get('scripts/ajax_portnames.php').done(function(data){
+					$.each(data, function(key,spn){
+						var option=$("<option>",({'value':spn.Pattern})).append(spn.Pattern.replace('(1)','x'));
+						generateportnames.append(option);
+					});
+					generateportnames.append($("<option>",({'value':'custom'})).text("<?php echo __("Custom")?>"));
+					generateportnames.append($("<option>",({'value':'invert'})).text("<?php echo __("Invert Port Labels")?>"));
+				});
+
+				generateportnames.on('change',function(e){
+					var inputs=$(e.currentTarget.parentElement.parentElement.parentElement).find('> div > div:nth-child(2) > input');
+					var portnames=[];
+					if(e.currentTarget.value=='invert'){
+						inputs_rev=inputs.get().reverse();
+						portnames.push(null);
+						for (i = 0; i < inputs_rev.length; i++) {
+							portnames.push(inputs_rev[i].value);
+						}
+					}else if(e.currentTarget.value=='custom'){
+						var dialog=$('<div />', {id: 'modal', title: 'Custom port pattern'}).html('<div id="modaltext"></div><br><div id="modalstatus"></div>');
+						dialog.find('#modalstatus').prepend('<p>Custom pattern: <input></input></p><p><a href="http://opendcim.org/wiki/index.php?title=NetworkConnections#Custom_Port_Name_Generator_Example_Patterns" target=_blank>Pattern Examples</a></p>');
+						dialog.dialog({
+							resizable: false,
+							modal: true,
+							dialogClass: "no-close",
+							buttons: {
+								OK: function(){
+									// can't use .get because of the async
+									$.ajax({type:'get',url:'scripts/ajax_portnames.php',async:false,data: {pattern:$('#modalstatus input').val(),count:$('#NumPorts').val()}}).done(function(data){
+										portnames=data;
+										applynames(inputs,portnames,e);
+									});
+									$(this).dialog("destroy");
+								},
+								Cancel: function(){
+									$(this).dialog("destroy");
+								}
+							}
+						});
+					}else{
+						// can't use .get because of the async
+						$.ajax({type:'get',url:'scripts/ajax_portnames.php',async:false,data: {pattern:e.currentTarget.value,count:$('#NumPorts').val()}}).done(function(data){
+							portnames=data;
+						});
+					}
+					function applynames(inputs,portnames,e){
+						// Use the port names we came with above to apply to the screen
+						if(portnames.length > $('#NumPorts').val()){
+							for (i = 1; i < portnames.length; i++) {
+								inputs.trigger('change')[i-1].value=portnames[i];
+							} 
+						}
+						e.currentTarget.value='';
+					}
+					applynames(inputs,portnames,e);
+				});
+
+				// Add mass edit controls
+				$('#hiddenports > div.table > div:first-child > div:nth-child(2)').css('position','relative').append(generateportnames.css({'background-color':'transparent','border':'0 none','position':'absolute','width':'auto','top':0,'right':0}));
+
 				// Open the dialog
 				PortsPoopup();
 			});
@@ -614,7 +675,9 @@
 						$.post('',{TemplateID: $('#TemplateID').val(), transferid: ((typeof TemplateID2=='undefined')?0:TemplateID2.val()), deleteme: ''}).done(function(data){
 							if(data.trim()==1){
 								dialog.dialog("destroy");
-								window.location=window.location.href;
+								// seems like a good idea to direct them to the new template
+								// rather than just a new template
+								$('#TemplateID').val((typeof TemplateID2=='undefined')?0:TemplateID2.val()).trigger('change');
 							}else{
 								alert("something is broken");
 							}
@@ -1278,6 +1341,7 @@ Points = (function(_super) {
   return Points;
 
 })(Array);
+
 </script>
 </body>
 </html>

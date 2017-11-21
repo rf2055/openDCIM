@@ -18,13 +18,26 @@
 		if($dc!=''){
 			$dc=intval($dc);
 			$dclimit=($dc==0)?'':" and c.DataCenterID=$dc ";
+			$ca_sql="SELECT AttributeID, Label, AttributeType from fac_DeviceCustomAttribute ORDER BY AttributeID ASC;";
+			$custom_concat = '';
+			$ca_result=$dbh->query($ca_sql)->fetchAll();
+			foreach($ca_result as $ca_row){
+				$custom_concat .= ", GROUP_CONCAT(IF(d.AttributeID={$ca_row["AttributeID"]},value,NULL)) AS Attribute{$ca_row["AttributeID"]} ";
+			} 
+
 			$sql="SELECT a.Name AS DataCenter, b.DeviceID, c.Location, b.Position, 
-				b.Height, b.Label, b.DeviceType, b.AssetTag, b.SerialNo, b.InstallDate, 
-				b.TemplateID, b.Owner, c.CabinetID, c.DataCenterID FROM fac_DataCenter a, 
-				fac_Device b, fac_Cabinet c WHERE b.Cabinet=c.CabinetID AND 
-				c.DataCenterID=a.DataCenterID $dclimit ORDER BY DataCenter ASC, Location ASC, 
-				Position ASC;";
+				b.Height, b.Label, b.DeviceType, b.AssetTag, b.SerialNo, b.InstallDate, b.WarrantyExpire, b.PrimaryIP, b.ParentDevice,
+				b.TemplateID, b.Owner, c.CabinetID, c.DataCenterID, f.Name as Manufacturer $custom_concat FROM fac_DataCenter a,
+				fac_Cabinet c, fac_DeviceTemplate e, fac_Manufacturer f, fac_Device b  LEFT OUTER JOIN fac_DeviceCustomValue d on
+				b.DeviceID=d.DeviceID WHERE b.Cabinet=c.CabinetID AND c.DataCenterID=a.DataCenterID AND b.TemplateID=e.TemplateID
+				AND e.ManufacturerID=f.ManufacturerID AND f.Name!='Virtual' $dclimit
+				GROUP BY DeviceID ORDER BY DataCenter ASC, Location ASC, Position ASC;";
 			$result=$dbh->query($sql);
+		
+			$ca_headers = '';
+			foreach($ca_result as $ca_row){
+				$ca_headers .= "\t<th>{$ca_row["Label"]}</th>";
+			}
 		}else{
 			$result=array();
 		}
@@ -38,19 +51,25 @@
 			\t<th>".__("Name")."</th>
 			\t<th>".__("Serial Number")."</th>
 			\t<th>".__("Asset Tag")."</th>
+      			\t<th>".__("Primary IP / Host Name")."</th>
 			\t<th>".__("Device Type")."</th>
 			\t<th>".__("Template")."</th>
 			\t<th>".__("Tags")."</th>
 			\t<th>".__("Owner")."</th>
 			\t<th>".__("Installation Date")."</th>
+			\t<th>".__("Warranty Expiration")."</th>
+			{$ca_headers}
 			</tr>\n\t</thead>\n\t<tbody>\n";
 
 		// suppressing errors for when there is a fake data set in place
 		foreach($result as $row){
+			// Dont show devices in chassis, they are shown under each chassiss as a child device
+			if($row["ParentDevice"]=="0"){
 			// insert date formating later for regionalization settings
-			$date=date("d M Y",strtotime($row["InstallDate"]));
-				$Model="";
-				$Department="";
+			$date=date("Y-m-d",strtotime($row["InstallDate"]));
+      			$warranty=date("Y-m-d",strtotime($row["WarrantyExpire"]));
+			$Model="";
+			$Department="";
 			
 			if($row["TemplateID"] >0){
 				$templ->TemplateID=$row["TemplateID"];
@@ -63,6 +82,18 @@
 				$dept->GetDeptByID();
 				$Department=$dept->Name;
 			}
+
+			$ca_cells = '';
+			foreach($ca_result as $ca_row){
+				$ca_num = "Attribute".$ca_row["AttributeID"];
+                                if($ca_row["AttributeType"] == "date" && is_null($row[$ca_num]) == FALSE){
+					$ca_date = date("d M Y",strtotime($row[$ca_num]));
+					$ca_cells .= "\t<td>{$ca_date}</td>";
+				}else{
+				$ca_cells .= "\t<td>{$row[$ca_num]}</td>";
+				}
+			}
+
 			$dev->DeviceID=$row["DeviceID"];
 			$tags=implode(",", $dev->GetTags());
 			$body.="\t\t<tr>
@@ -73,18 +104,22 @@
 			\t<td><a href=\"devices.php?DeviceID=$dev->DeviceID\" target=\"device\">{$row["Label"]}</a></td>
 			\t<td>{$row["SerialNo"]}</td>
 			\t<td>{$row["AssetTag"]}</td>
+      \t<td>{$row["PrimaryIP"]}</td>
 			\t<td><a href=\"search.php?key=dev&DeviceType={$row["DeviceType"]}&search\" target=\"search\">{$row["DeviceType"]}</a></td>
 			\t<td>$Model</td>
 			\t<td>$tags</td>
 			\t<td>$Department</td>
-			\t<td>$date</td>\n\t\t</tr>\n";
+      \t<td>$warranty</td>
+			\t<td>$date</td>
+			{$ca_cells}\t\n\t\t</tr>\n";
 			
 			if($row["DeviceType"]=="Chassis"){
 				// Find all of the children!
 				$childList=$dev->GetDeviceChildren();
 				
 				foreach($childList as $child){
-					$cdate=date("d M Y",strtotime($child->InstallDate));
+					$cdate=date("Y-m-d",strtotime($child->InstallDate));
+          $cwarranty=date("Y-m-d",strtotime($child->WarrantyExpire));
 					$cModel="";
 					$cDepartment="";					
 
@@ -109,13 +144,17 @@
 					\t<td><a href=\"devices.php?DeviceID=$child->DeviceID\" target=\"device\">$child->Label</a></td>
 					\t<td>$child->SerialNo</td>
 					\t<td>$child->AssetTag</td>
+          \t<td>$child->PrimaryIP</td>
 					\t<td><a href=\"search.php?key=dev&DeviceType=$child->DeviceType&search\" target=\"search\">$child->DeviceType</a></td>
 					\t<td>$cModel</td>
 					\t<td>$ctags</td>
 					\t<td>$cDepartment</td>
-					\t<td>$cdate</td>\n\t\t</tr>\n";
+          			\t<td>$cwarranty</td>
+					\t<td>$cdate</td>
+					\t{$ca_cells}\n\t\t</tr>\n";
 				}
 			}
+		}
 		}
 		$body.="\t\t</tbody>\n\t</table>\n";
 		if(isset($_REQUEST['ajax'])){
@@ -132,9 +171,7 @@
   <link rel="stylesheet" href="css/inventory.php" type="text/css">
   <link rel="stylesheet" href="css/print.css" type="text/css" media="print">
   <link rel="stylesheet" href="css/jquery-ui.css" type="text/css">
-  <link rel="stylesheet" href="css/jquery.dataTables.css" type="text/css">
-  <link rel="stylesheet" href="css/ColVis.css" type="text/css">
-  <link rel="stylesheet" href="css/TableTools.css" type="text/css">
+  <link rel="stylesheet" href="css/jquery.dataTables.min.css" type="text/css">
   <style type="text/css"></style>
   <!--[if lt IE 9]>
   <link rel="stylesheet"  href="css/ie.css" type="text/css" />
@@ -142,19 +179,27 @@
   <script type="text/javascript" src="scripts/jquery.min.js"></script>
   <script type="text/javascript" src="scripts/jquery-ui.min.js"></script>
   <script type="text/javascript" src="scripts/jquery.dataTables.min.js"></script>
-  <script type="text/javascript" src="scripts/ColVis.min.js"></script>
-  <script type="text/javascript" src="scripts/TableTools.min.js"></script>
-  
+  <script type="text/javascript" src="scripts/pdfmake.min.js"></script>
+  <script type="text/javascript" src="scripts/vfs_fonts.js"></script>
   <script type="text/javascript">
 	$(document).ready(function(){
 		var rows;
 		function dt(){
+			var title=$("#datacenterid option:selected").text() + ' export'
 			$('#export').dataTable({
-				"iDisplayLength": 25,
-				"sDom": 'CT<"clear">lfrtip',
-				"oTableTools": {
-					"sSwfPath": "scripts/copy_csv_xls.swf",
-					"aButtons": ["copy","csv","xls","print"]
+				dom: 'B<"clear">lfrtip',
+				buttons:{
+					buttons: [
+						'copy',
+						{
+							extend: 'excel',
+							title: title
+						},
+						{
+							extend: 'pdf',
+							title: title
+						},'csv', 'colvis', 'print'
+					]
 				}
 			});
 			redraw();

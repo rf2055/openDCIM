@@ -91,10 +91,21 @@ class SwitchInfo {
 		}
 		
 		$x=array();
-		foreach(self::OSS_SNMP_Lookup($dev,"names") as $index => $portdesc ) {
-			if ( preg_match( "/([0-9]\:|bond|\"[A-Z]|swp|eth|Ethernet|Port-Channel|\/)[01]$/", $portdesc )) {
+		$portlist=self::OSS_SNMP_Lookup($dev,"names");
+		foreach($portlist as $index => $portdesc ) {
+			if ( preg_match( "/([0-9]\:|bond|\"[A-Z]|swp|eth|ix|em|e|Ethernet|g|Port-Channel|X|\/)[0]{0,}?[01]$|[01]$/", $portdesc )) {
 				$x[$index] = $portdesc;
 			} // Find lines that end with /1
+		}
+		// regex has failed us, return whatever mess we have
+		if(count($x)==0){
+			if(count($portlist)==0){
+				$err_msg=__("I don't know what type of device this is but it did not return any ports whatsoever.  Do not try to report this as an error.");
+			}else{
+				$err_msg=__("First port detection failed, please report to openDCIM developers");
+			}
+			$x=$portlist;
+			$x=array("err"=>$err_msg)+$x;
 		}
 		return $x;
 	}

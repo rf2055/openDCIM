@@ -98,7 +98,7 @@ textarea {white-space: pre;word-wrap: break-word;}
 	position: relative;
 }
 #header > span {color: white;display: block;margin-top: 5px;text-align: center;
-	text-shadow: 2px 2px 0 #063, 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
+	text-shadow: 1px 1px 0 #063, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
 }
 #header1 {font-size: xx-large;}
 #header2 {font-size: x-large;}
@@ -157,7 +157,7 @@ div#imageselection { display: none;}
 
 
 
-/* Datacenter Stats */
+/* Data Center Stats */
 .dcstats .heading > div{width: 89%;display: inline-block;vertical-align: middle;}
 .dcstats .heading > div + div {width: 10%;}
 .dcstats .heading > div + div button {display: block;width: 100%;}
@@ -179,7 +179,7 @@ div#dcstats .table + .table > div > div + div{white-space: pre; text-align: righ
 .dcstats ~ #tt ul li.yellow {background: url('../images/ys.png') left center no-repeat; line-height: 20px; padding-left: 20px;}
 .dcstats ~ #tt ul li.wtf {background: url('../images/us.png') left center no-repeat; line-height: 20px; padding-left: 20px;}
 #maptitle {padding: 8px; font-size: 120%; font-weight: bold;} 
-#maptitle .nav {float: right;}
+#maptitle .nav {float: right; height: 21px;}
 #mapCanvas { margin-bottom: 50px; position: relative;}
 canvas#background { position: absolute; }
 
@@ -502,6 +502,9 @@ div.cabinet {
 #servercontainer .dept0, #servercontainer-rear .dept0, #servercontainer-side .dept0 {background-color: #fff;}
 
 .cabinet .pos { text-align: center; }
+/* stupid safari layout glitch */
+.cabinet table.cabinet { border-collapse: collapse; }
+.cabinet table.cabinet tr:nth-child(n+3) {height: 21px;}
 .cabinet #servercontainer, .cabinet #servercontainer-rear, .cabinet #servercontainer-side { background-image: url("../images/racku-background.png"); position: relative; padding: 0px; margin: 0px;}
 .genericdevice {display: flex;justify-content: center; align-items: center; height: 100%; border: 2px black solid; background-color: inherit; overflow: hidden; white-space: nowrap;}
 
@@ -532,7 +535,7 @@ div.cabinet {
 .blackout { background-color: black; }
 .rowview .noprint span:last-child {display: none;}
 .rowview div.cabinet { vertical-align: bottom; }
-.cabinet .error { background-color: <?php echo $config->ParameterArray['CriticalColor']; ?>; }
+.cabinet .error { background-color: <?php echo $config->ParameterArray['CriticalColor']; ?> !important; }
 
 /* PICTURES */
 .disabled {pointer-events: none;cursor: default;}
@@ -730,7 +733,6 @@ div.cabinet {
 .device .table .table .table > div > div {padding: 3px;}
 .right .table + .table {margin-top: 1em;}
 
-
 .table.patchpanel > div:first-child > div > div,
 .table.switch > div:first-child > div > div,
 .table.power > div:first-child > div > div { position: relative; border: 0px none; margin: -3px; padding-right: 20px; }
@@ -791,7 +793,6 @@ div.cabinet {
 #connection-limiter .ui-button-text-only .ui-button-text { padding: 0.2em; }
 #devicetype-limiter label, #connection-limiter label { width: auto; }
 
-
 .device #tags { width: 95%; min-width: 250px;}
 
 #firstport.hide { display: none; }
@@ -838,6 +839,47 @@ div.cabinet {
 #preview { width: 340px; min-height: 130px; background-color: white; border: 1px solid grey; padding: 5px;}
 #preview img { display: block; border: 0px; max-width: 330px;}
 .jHtmlArea iframe { background-color: white; border: 1px inset; min-height: 100px;}
+
+/* hey I do something function */
+.wade{
+	position: relative;
+	width: 250px;
+	height: 120px;
+	padding: 0px;
+	background: #FFFFFF;
+	-webkit-border-radius: 17px;
+	-moz-border-radius: 17px;
+	border-radius: 17px;
+	border: #000000 solid 1px;
+}
+
+.wade:after{
+	content: '';
+	position: absolute;
+	border-style: solid;
+	border-width: 15px 16px 0;
+	border-color: #FFFFFF transparent;
+	display: block;
+	width: 0;
+	z-index: 1;
+	bottom: -15px;
+	left: 19px;
+}
+
+.wade:before{
+	content: '';
+	position: absolute;
+	border-style: solid;
+	border-width: 15px 16px 0;
+	border-color: #000000 transparent;
+	display: block;
+	width: 0;
+	z-index: 0;
+	bottom: -16px;
+	left: 19px;
+}
+
+
 
 /* Logging style */
 #logtable { width: 100%; width: calc(100% - 36px); border: 1px solid black; }
@@ -1020,6 +1062,8 @@ ul.nav li {padding: .5em;}
 
 /* Search Export */
 div.center div table#export { margin: auto; max-width: none; }
+#export_wrapper a.dt-button { margin-right: 0px; }
+
 
 /* Paths */
 /* Paths form */

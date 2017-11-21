@@ -228,7 +228,8 @@
 				if(count($portCandidates)>0){
 					foreach($portCandidates as $id => $portdesc){
 						$checked=($id==$dev->FirstPortNum)?' checked':'';
-						print '<input type="radio" name="FirstPortNum" id="fp'.$id.'" value="'.$id.'"'.$checked.'><label for="fp'.$id.'">'.$portdesc.'</label><br>';
+						$disabled=($id=='err')?' disabled':'';
+						print '<input type="radio" name="FirstPortNum" id="fp'.$id.'" value="'.$id.'"'.$checked.$disabled.'><label for="fp'.$id.'">'.$portdesc.'</label><br>';
 					}
 				}else{
 					print __("ERROR: No ports found");
@@ -439,12 +440,16 @@
 		echo json_encode($list);
 		exit;
 	}
-	if(isset($_POST['ESXrefresh'])){
-		$dev->DeviceID=$_POST['ESXrefresh'];
+	if(isset($_POST['VMrefresh'])){
+		$dev->DeviceID=$_POST['VMrefresh'];
 		$dev->GetDevice();
 		if($dev->Rights=="Write"){
-			ESX::RefreshInventory($_POST['ESXrefresh']);
-			buildESXtable($_POST['ESXrefresh']);
+			if ( $dev->Hypervisor == "ESX" ) {
+				ESX::RefreshInventory($_POST['VMrefresh']);
+			} elseif ( $dev->Hypervisor == "ProxMox" ) {
+				PMox::RefreshInventory( $_POST['VMrefresh'], true);
+			}
+			buildVMtable($_POST['VMrefresh']);
 		}
 		exit;
 	}
@@ -489,7 +494,13 @@
 			}
 			echo json_encode(SwitchInfo::getPortAlias($_POST['refreshswitch']));
 		}else{
-			echo json_encode(SwitchInfo::getPortStatus($_POST['refreshswitch']));
+			$dev->DeviceID = $_POST['refreshswitch'];
+			$tagList = $dev->GetTags();
+			if( ! in_array( "NoPoll", $tagList )) {
+				echo json_encode(SwitchInfo::getPortStatus($_POST['refreshswitch']));
+			} else {
+				echo json_encode(array());
+			}
 		}
 		exit;
 	}
@@ -513,6 +524,17 @@
 	}
 	// END AJAX
 
+	// Not really AJAX calls since there's no return, but special actions
+	// Functions to Reset Counters (rc) for SNMP Failures
+	if( isset($_GET["rc"]) && isset($_GET['DeviceID']) ) {
+		$dev->DeviceID = $_GET['DeviceID'];
+		Device::resetCounter( $dev->DeviceID );
+		if ( $dev->DeviceID == "ALL" ) {
+			// Special case
+			header( 'Location: index.php' );
+			exit;
+		}
+	}
 
 	// These objects are used no matter what operation we're performing
 	$templ=new DeviceTemplate();
@@ -540,7 +562,7 @@
 		}
 		if(isset($_REQUEST['action'])&&$_REQUEST['action']=='new'){
 			// sets install date to today when a new device is being created
-			$dev->InstallDate=date("m/d/Y");
+			$dev->InstallDate=date("Y-m-d");
 			$dev->DeviceType=(isset($_REQUEST['DeviceType']))?$_REQUEST['DeviceType']:$dev->DeviceType;
 			// Some fields are pre-populated when you click "Add device to this cabinet"
 			// If you are adding a device that is assigned to a specific customer, assume that device is also owned by that customer
@@ -582,6 +604,34 @@
 				if($_POST['action']!='Child'){
 					// Preserve this as a special variable to keep an injection from being possible
 					$devrights=$dev->Rights;
+					// Add in the "all devices" custom attributes 
+					$dcaList=DeviceCustomAttribute::GetDeviceCustomAttributeList();
+					if(isset($dcaList)) {
+						foreach($dcaList as $dca) {
+							if($dca->AllDevices==1) {
+								// this will add in the attribute if it is empty
+								$label=$dca->Label;
+								if(!isset($dev->$label)){
+									$dev->{$dca->Label}='';
+								}
+							}
+							if($dca->AttributeType=="checkbox"){
+								$dev->{$dca->Label}='off';
+							}
+						}
+					}
+					// Add in the template specific attributes
+					$tmpl=new DeviceTemplate($dev->TemplateID);
+					$tmpl->GetTemplateByID();
+					if(isset($tmpl->CustomValues)) {
+						foreach($tmpl->CustomValues as $index => $value) {
+							// this will add in the attribute if it is empty
+							if(!isset($dev->{$dcaList[$index]->Label})){
+								$dev->{$dcaList[$index]->Label}='';
+							}
+						}
+					}
+
 					foreach($dev as $prop => $val){
 						$dev->$prop=(isset($_POST[$prop]))?$_POST[$prop]:$val;
 					}
@@ -627,7 +677,6 @@
 								$dev->MoveToStorage();
 							}else{
 								$dev->UpdateDevice();
-								updateCustomValues($dev);
 							}
 							break;
 						case 'Delete':
@@ -658,7 +707,7 @@
 							$dev->ParentDevice=$_REQUEST["ParentDevice"];
 
 							// sets install date to today when a new device is being created
-							$dev->InstallDate=date("m/d/Y");
+							$dev->InstallDate=date("Y-m-d");
 							break;
 					}
 				// Can't check the device for rights because it shouldn't exist yet
@@ -681,7 +730,6 @@
 					}
 					$dev->CreateDevice();
 					$dev->SetTags($tagarray);
-					updateCustomValues($dev);
 
 					// We've, hopefully, successfully created a new device. Force them to the new device page.
 					header('Location: '.redirect("devices.php?DeviceID=$dev->DeviceID"));
@@ -709,7 +757,7 @@
 				// clearing errors for now
 				$LastWattage=$LastRead=$upTime=0;
 
-				$pwrConnection->DeviceID=($dev->ParentDevice>0)?$dev->GetRootDeviceID():$dev->DeviceID;
+				$pwrConnection->DeviceID=($dev->ParentDevice>0&&$dev->PowerSupplyCount==0)?$dev->GetRootDeviceID():$dev->DeviceID;
 				$pwrCords=$pwrConnection->getPorts();
 
 				if($dev->DeviceType=='CDU'){
@@ -758,7 +806,7 @@
 		 */
 
 		// sets install date to today when a new device is being created
-		$dev->InstallDate=date("m/d/Y");
+		$dev->InstallDate=date("Y-m-d");
 	}
 
 	// We don't want someone accidentally adding a chassis device inside of a chassis slot.
@@ -812,14 +860,16 @@
 	$templ->TemplateID=$dev->TemplateID;
 	$templ->GetTemplateByID();
 
-
+	if ( $dev->DeviceID == 0 ) {
+		$dev->Status="Reserved";
+	}
 	
 	$title=($dev->Label!='')?"$dev->Label :: $dev->DeviceID":__("openDCIM Device Maintenance");
 
-	function buildESXtable($DeviceID){
-		$ESX=new ESX();
-		$ESX->DeviceID=$DeviceID;
-		$vmList=$ESX->GetDeviceInventory();
+	function buildVMtable($DeviceID){
+		$Hyper=new VM();
+		$Hyper->DeviceID=$DeviceID;
+		$vmList=$Hyper->GetDeviceInventory();
 
 		print "\n<div class=\"table border\"><div><div>".__("VM Name")."</div><div>".__("Status")."</div><div>".__("Owner")."</div><div>".__("Primary Contact")."</div><div>".__("Last Updated")."</div></div>\n";
 		foreach($vmList as $vmRow){
@@ -847,7 +897,6 @@
 	function buildCustomAttributes($template, $device) {
 		$dcaList=DeviceCustomAttribute::GetDeviceCustomAttributeList();
 		$tdcaList=$template->CustomValues;
-		$dcvList=$device->CustomValues;
 
 		$customvalues = array();
 
@@ -870,19 +919,15 @@
 
 			}
 		}
-		if(isset($dcvList)) {
-			// pull the values set at this device level if any exist, the assumption being that one of the 2 loops above has already populated the type and required fields
-			foreach($dcvList as $AttributeID=>$dcv) {
-				if(array_key_exists($AttributeID, $customvalues)) {
-					$customvalues[$AttributeID]["value"]=$dcv;
-				} else {
-					// this is probably an  error, what do?
-				}
+		foreach($customvalues as $customkey=>$customdata) {
+			$prop=$dcaList[$customkey]->Label;
+			if ( property_exists( $device, $prop )) {
+				$customvalues[$customkey]['value']=$device->$prop;
 			}
 		}
 		echo '<div class="table">';	
 		foreach($customvalues as $customkey=>$customdata) {
-			$inputname = "customvalue[$customkey]";
+			$inputname = $dcaList[$customkey]->Label;
 			$validation="";
 			$cvtype = $customvalues[$customkey]["type"];
 			if($customvalues[$customkey]["required"]==1 || $cvtype!="string"){
@@ -900,10 +945,7 @@
 			echo '<div>
 				<div><label for="',$inputname,'">',$dcaList[$customkey]->Label,'</label></div>';
 			if($cvtype=="checkbox"){
-				$checked = "";
-				if($customdata["value"] == "1" || $customdata["value"]=="on"){
-					$checked = " checked";
-				}
+				$checked=($customdata["value"] == "1" || $customdata["value"]=="on")?" checked":"";
 				echo '<div><input type="checkbox" name="',$inputname,'" id="',$inputname,'"',$checked,'></div>';
 			} else if ($cvtype=="set") {
 				echo '<div><select name="',$inputname,'" id="',$inputname,'">';
@@ -923,46 +965,11 @@
 		}
 		echo '</div>';
 	}
-	function updateCustomValues($device) {
-		$template=new DeviceTemplate();
-		$template->TemplateID=$device->TemplateID;
-		$template->GetTemplateByID();
-		
-		$dcaList=DeviceCustomAttribute::GetDeviceCustomAttributeList();
-		$tdcaList=$template->CustomValues;
-		$defaultvalues = array();
-		if(isset($dcaList)) {
-			foreach($dcaList as $dca) {
-				if($dca->AllDevices==1) {
-					$defaultvalues[$dca->AttributeID]["value"]=$dca->DefaultValue;
-					$defaultvalues[$dca->AttributeID]["required"]=$dca->Required;
-				}
-			}
-		}
-		if(isset($tdcaList)) {
-			foreach($tdcaList as $AttributeID=>$tdca) {
-				$defaultvalues[$AttributeID]["value"]=$tdca["value"];
-				$defaultvalues[$AttributeID]["required"]=$tdca["required"];
-			}
-		}
-
-		$device->DeleteCustomValues();
-
-		if(isset($_POST["customvalue"])){
-			foreach($_POST["customvalue"] as $AttributeID=>$value) {
-				if(trim($value) != trim($defaultvalues[$AttributeID]["value"])) {
-					$device->InsertCustomValue($AttributeID, $value);	
-				}
-			}
-		}
-		
-	}
 // In the case of a child device we might define this above and in that case we
 // need to preserve the flag
 $write=(isset($write))?$write:false;
 $write=($person->canWrite($cab->AssignedTo))?true:$write;
 $write=($dev->Rights=="Write")?true:$write;
-
 
 ?>
 <!doctype html>
@@ -1127,9 +1134,9 @@ $(document).ready(function() {
 	$(document).data('showdc','<?php echo $config->ParameterArray["AppendCabDC"]; ?>');
 
 	$('#deviceform').validationEngine();
-	$('#MfgDate').datepicker();
-	$('#InstallDate').datepicker();
-	$('#WarrantyExpire').datepicker();
+	$('#MfgDate').datepicker({dateFormat: "yy-mm-dd"});
+	$('#InstallDate').datepicker({dateFormat: "yy-mm-dd"});
+	$('#WarrantyExpire').datepicker({dateFormat: "yy-mm-dd"});
 	$('#Owner').next('button').click(function(){
 		window.open('contactpopup.php?deptid='+$('#Owner').val(), 'Contacts Lookup', 'width=800, height=700, resizable=no, toolbar=no');
 		return false;
@@ -1181,7 +1188,7 @@ $(document).ready(function() {
 	}).trigger('change');
 
 	// Make SNMP community visible
-	$('#SNMPCommunity,#v3AuthPassphrase,#v3PrivPassphrase')
+	$('#SNMPCommunity,#v3AuthPassphrase,#v3PrivPassphrase,#APIPassword')
 		.focus(function(){$(this).attr('type','text');})
 		.blur(function(){$(this).attr('type','password');});
 
@@ -1213,15 +1220,15 @@ $(document).ready(function() {
 	});
 
 	// Add in refresh functions for virtual machines
-	var ESXtable=$('<div>').addClass('table border').append('<div><div>VM Name</div><div>Status</div><div>Owner</div><div>Last Updated</div></div>');
-	var ESXbutton=$('<button>',{'type':'button'}).css({'position':'absolute','top':'10px','right':'2px'}).text('Refresh');
-	ESXbutton.click(ESXrefresh);
-	if($('#ESX').val()==1){
-		$('#ESXframe').css('position','relative').append(ESXbutton);
+	var VMtable=$('<div>').addClass('table border').append('<div><div>VM Name</div><div>Status</div><div>Owner</div><div>Last Updated</div></div>');
+	var VMbutton=$('<button>',{'type':'button'}).css({'position':'absolute','top':'10px','right':'2px'}).text('Refresh');
+	VMbutton.click(VMrefresh);
+	if($('#Hypervisor').val()!="None"){
+		$('#VMframe').css('position','relative').append(VMbutton);
 	}
-	function ESXrefresh(){
-		$.post('',{ESXrefresh: $('#DeviceID').val()}).done(function(data){
-			$('#ESXframe .table ~ .table').replaceWith(data);
+	function VMrefresh(){
+		$.post('',{VMrefresh: $('#DeviceID').val()}).done(function(data){
+			$('#VMframe .table ~ .table').replaceWith(data);
 		});
 	}
 
@@ -1318,9 +1325,9 @@ $(document).ready(function() {
 			$('.switch div[id^="st"]').hide();
 		}
 		if($(this).val()=='Server'){
-			$('#ESXframe').show();
+			$('#VMframe').show();
 		}else{
-			$('#ESXframe').hide();
+			$('#VMframe').hide();
 		}
 		if($(this).val()=='CDU'){
 			$('#cdu').show().removeClass('hide');
@@ -1331,6 +1338,18 @@ $(document).ready(function() {
 		}
 		resize();
 	}).change();
+
+	$('select#Hypervisor').change(function(){
+		if($(this).val()=='ProxMox'){
+			$('#proxmoxblock').removeClass('hide');
+			$('#snmpblock').addClass('hide');
+		}else{
+			// Put back any hidden / renamed fields
+			$('#proxmoxblock').addClass('hide');
+			$('#snmpblock').removeClass('hide');
+		}
+	}).change();
+
 	$('#firstport button[name=firstport]').click(function(){
 		// S.U.T. Update the IP and snmp community then click on the switch controls.
 		// we'll combat that with a limited device update.
@@ -1566,7 +1585,7 @@ print "		var dialog=$('<div>').prop('title',\"".__("Verify Delete Device")."\").
 			var rack=$('#datacenters a[href$="cabinetid='+hdn_cabinetid.val()+'"]');
 			// Update the hidden cabinet id field to match the new parent device and show the name
 			hdn_cabinetid.parent('div').text(rack.text()).append(hdn_cabinetid);
-		});
+		}).trigger('change');
 
 		$('#Reservation').change(function(){
 			if(!$(this).prop("checked")){
@@ -1576,7 +1595,7 @@ print "		var dialog=$('<div>').prop('title',\"".__("Verify Delete Device")."\").
 		});
 		// Delete device confirmation dialog
 		$('button[value="Delete"]').click(function(e){
-			var form=$(this).parents('form');
+					var form=$(this).parents('form');
 			var btn=$(this);
 <?php echo '				dialog.find(\'span + span\').text("',__("This device will be deleted and there is no undo. Are you sure?"),'");'; ?>
 			dialog.dialog({
@@ -1678,8 +1697,16 @@ echo '<div class="center"><div>
 		   <div><input type="text" name="DeviceID" id="DeviceID" value="'.$dev->DeviceID.'" size="6" readonly></div>
 		</div>
 		<div>
-			<div><label for="Reservation">'.__("Reservation?").'</label></div>
-			<div><input type="checkbox" name="Reservation" id="Reservation"'.((($dev->Reservation) || $copy )?" checked":"").'></div>
+			<div><label for="Status">'.__("Status").'</label></div>
+			<div>
+				<select name="Status" id="Status">';
+					foreach( DeviceStatus::getStatusNames() as $statRow){
+						$selected=($dev->Status==$statRow)?" selected":"";
+						print "\t\t\t\t<option value=\"$statRow\"$selected>" . __($statRow) . "</option>\n";
+					}
+echo '			</select>
+			</div>
+
 		</div>
 		<div>
 		   <div><label for="Label">'.__("Label").'</label></div>
@@ -1702,12 +1729,12 @@ echo '<div class="center"><div>
 		</div>
 		<div>
 		   <div><label for="MfgDate">'.__("Manufacture Date").'</label></div>
-		   <div><input type="text" class="validate[optional,custom[date]] datepicker" name="MfgDate" id="MfgDate" value="'.(($dev->MfgDate>'0000-00-00 00:00:00')?date('m/d/Y',strtotime($dev->MfgDate)):"").'">
+		   <div><input type="text" class="validate[optional,custom[date]] datepicker" name="MfgDate" id="MfgDate" value="'.(($dev->MfgDate>'0000-00-00 00:00:00')?date('Y-m-d',strtotime($dev->MfgDate)):"").'">
 		   </div>
 		</div>
 		<div>
 		   <div><label for="InstallDate">'.__("Install Date").'</label></div>
-		   <div><input type="text" class="validate[required,custom[date]] datepicker" name="InstallDate" id="InstallDate" value="'.(($dev->InstallDate>'0000-00-00 00:00:00')?date('m/d/Y',strtotime($dev->InstallDate)):"").'"></div>
+		   <div><input type="text" class="validate[required,custom[date]] datepicker" name="InstallDate" id="InstallDate" value="'.(($dev->InstallDate>'0000-00-00 00:00:00')?date('Y-m-d',strtotime($dev->InstallDate)):"").'"></div>
 		</div>
 		<div>
 		   <div><label for="WarrantyCo">'.__("Warranty Company").'</label></div>
@@ -1715,7 +1742,7 @@ echo '<div class="center"><div>
 		</div>
 		<div>
 		   <div><label for="WarrantyExpire">'.__("Warranty Expiration").'</label></div>
-		   <div><input type="text" class="validate[custom[date]] datepicker" name="WarrantyExpire" id="WarrantyExpire" value="'.date('m/d/Y',strtotime($dev->WarrantyExpire)).'"></div>
+		   <div><input type="text" class="validate[custom[date]] datepicker" name="WarrantyExpire" id="WarrantyExpire" value="'.date('Y-m-d',strtotime($dev->WarrantyExpire)).'"></div>
 		</div>
 		<div>
 		   <div>'.__("Last Audit Completed").'</div>
@@ -1854,7 +1881,7 @@ echo '			</select>
 		</div>
 		<div>
 		   <div><label for="Position">',__("Position"),'</label></div>
-		   <div><input type="number" class="required,validate[custom[onlyNumberSp],min[1],max[',$cab->CabinetHeight,']]" name="Position" id="Position" value="',$dev->Position,'"></div>
+		   <div><input type="number" class="required,validate[custom[onlyNumberSp],min[0],max[',$cab->CabinetHeight,']]" name="Position" id="Position" value="',$dev->Position,'"></div>
 		</div>
 		';
 
@@ -1883,12 +1910,12 @@ echo '		<div>
 		</div>';
 
 		// Blade devices don't have power supplies
-		if($dev->ParentDevice==0){
+		// if($dev->ParentDevice==0){
 			echo '		<div>
 		   <div><label for="PowerSupplyCount">',__("Power Connections"),'</label></div>
 		   <div><input type="number" class="optional,validate[custom[onlyNumberSp]]" name="PowerSupplyCount" id="PowerSupplyCount" value="',$dev->PowerSupplyCount,'"></div>
 		</div>';
-		}
+		// }
 
 		// Show extra info for chassis devices
 		if($dev->DeviceType=="Chassis"){
@@ -1924,6 +1951,27 @@ echo '
 echo '
 		<img id="devicefront" src="pictures/'.$templ->FrontPictureFile.'" alt="front of device">
 		<img id="devicerear" src="pictures/'.$templ->RearPictureFile.'" alt="rear of device">
+	</div>
+</fieldset>
+<fieldset id="proxmoxblock" class="hide">
+	<legend>'.__("ProxMox Configuration").'</legend>
+	<div class="table">
+		<div>
+		  <div><label for="APIUsername">'.__("API Username").'</label></div>
+		  <div><input type="text" name="APIUsername" id="APIUsername" value="'.$dev->APIUsername.'"></div>
+		</div>
+		<div>
+		  <div><label for="APIPassword">'.__("API Password").'</label></div>
+		  <div><input type="password" name="APIPassword" id="APIPassword" value="'.$dev->APIPassword.'"></div>
+		</div>
+		<div>
+		  <div><label for="APIPort">'.__("API Port").'</label></div>
+		  <div><input type="number" name="APIPort" id="APIPort" value="'.$dev->APIPort.'"></div>
+		</div>
+		<div>
+		  <div><label for="ProxMoxRealm">'.__("ProxMox Realm").'</label></div>
+		  <div><input type="text" name="ProxMoxRealm" id="ProxMoxRealm" value="'.$dev->ProxMoxRealm.'"></div>
+		</div>
 	</div>
 </fieldset>
 <fieldset id="snmpblock">
@@ -2177,33 +2225,29 @@ echo '		<div class="caption">
 <?php
 	}
 
-	// Do not display ESX block if device isn't a virtual server and the user doesn't have write access
-	if(($write || $dev->ESX) && ($dev->DeviceType=="Server" || $dev->DeviceType=="")){
-		echo '<fieldset id="ESXframe">	<legend>',__("Hypervisor Server Information"),'</legend>';
+	// Do not display VM block if device isn't a virtual server and the user doesn't have write access
+	if($write && ($dev->DeviceType=="Server" || $dev->DeviceType=="")){
+		echo '<fieldset id="VMframe">	<legend>',__("Hypervisor Server Information"),'</legend>';
 	// If the user doesn't have write access display the list of VMs but not the configuration information.
 		if($write){
 
 echo '	<div class="table">
 		<div>
-		   <div><label for="Hypervisor">'.__("Hypervisor").'</label></div>
-		   <div><select name="Hypervisor" id="Hypervisor">';
+			<div><label for="Hypervisor">'.__("Hypervisor").'</label></div>
+			<div><select name="Hypervisor" id="Hypervisor">
+';
    foreach ($validHypervisors as $h ) {
-   		if ($dev->Hypervisor == $h) {
-   			$hs = "selected";
-   		} else {
-   			$hs = "";
-   		}
-
-   		print "<option value=\"$h\" $hs>$h</option>\n";
+		if($dev->Hypervisor==$h){$selected=" selected";}else{$selected="";}
+   		print "\t\t\t\t<option value=\"$h\" $selected>$h</option>\n";
    	}
 
-echo '</select></div>
+echo '			</select></div>
 		</div>
 	</div><!-- END div.table -->';
 
 		}
-		if($dev->Hypervisor!="None"){
-			buildESXtable($dev->DeviceID);
+		if($dev->Hypervisor!="None" && $dev->Hypervisor!=""){
+			buildVMtable($dev->DeviceID);
 		}
 		print "</fieldset>\n";
 	}
@@ -2511,7 +2555,7 @@ $connectioncontrols.=($dev->DeviceID>0 && !empty($portList))?'
 
 		// Add a spacer for use when/if port removal options are triggered
 		$('.switch > div:first-child, .patchpanel > div:first-child').prepend($('<div>').addClass('delete').hide());
-		// Endable Mass Change Options
+		// Enable Mass Change Options
 		$('.switch.table, .patchpanel.table, .power.table').massedit();
 
 		<?php echo (class_exists('LogActions') && $dev->DeviceID>0)?'LameLogDisplay();':''; ?>

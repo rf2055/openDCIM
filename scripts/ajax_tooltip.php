@@ -38,7 +38,7 @@ if($config->ParameterArray["mUnits"]=="english"){
 // If the object id isn't set then don't bother with anything else.
 if($object>0){
 	// Cabinet
-	if(isset($_POST['cab'])){
+	if(isset($_POST['type']) && $_POST['type']=='cabinetid'){
 		$cab->CabinetID=$object;
 		$cab->GetCabinet();
 		if($cab->Rights!="None"){
@@ -168,9 +168,11 @@ if($object>0){
 				$maxDraw*=0.8;
 
 				// Only keep the highest percentage of any single CDU in a cabinet
-				$pp=intval($rp / $maxDraw * 100);
-				if($pp>$RealPowerRed){$rpcolor=$rs;}elseif($pp>$RealPowerYellow){$rpcolor=$ys;}else{$rpcolor=$gs;}
-				$tooltip.="<li class=\"$rpcolor\">$label: $pp%</li>\n";
+				if ($maxDraw > 0) {
+					$pp=intval($rp / $maxDraw * 100);
+					if($pp>$RealPowerRed){$rpcolor=$rs;}elseif($pp>$RealPowerYellow){$rpcolor=$ys;}else{$rpcolor=$gs;}
+					$tooltip.="<li class=\"$rpcolor\">$label: $pp%</li>\n";
+				}
 			}
 
 
@@ -179,6 +181,12 @@ if($object>0){
 		}else{
 			$tooltip=__("Quit that! You don't have rights to view this.");
 		}
+	} elseif ( isset($_POST['type']) && strtolower($_POST['type'])=='panelid' ) {
+		$pan = new PowerPanel();
+		$pan->PanelID = $object;
+		$pan->getPanel();
+
+		$tooltip="<span>$pan->PanelLabel</span>\n";
 	}elseif(isset($_POST['cdu']) || isset($_POST['dev'])){
 		if(isset($_POST['cdu']) && $config->ParameterArray["CDUToolTips"]=='enabled'){
 			$pdu=new PowerDistribution();
@@ -205,13 +213,13 @@ if($object>0){
 					if(isset($pdu->SNMPCommunity)){
 						$tooltip.=__($row["Label"]).": ".$pdu->$row["Field"]."<br>\n";
 					}else{
-						if($dev->ESX){
+						if($dev->Hypervisor){
 							$tooltip.=__($row["Label"]).": ".$dev->$row["Field"]."<br>\n";
 						}
 					}
 					break;
-				case "ESX":
-					if($dev->ESX){
+				case "Hypervisor":
+					if($dev->Hypervisor){
 						$tooltip.=__($row["Label"]).": ".$dev->$row["Field"]."<br>\n";
 					}
 					break;
@@ -310,9 +318,9 @@ if($object>0){
 				end:
 				default:
 					if(isset($_POST['cdu'])){
-						$tooltip.=__($row["Label"]).": ".$pdu->$row["Field"]."<br>\n";
+						@$tooltip.=__($row["Label"]).": ".$pdu->{$row["Field"]}."<br>\n";
 					}else{
-						$tooltip.=__($row["Label"]).": ".$dev->$row["Field"]."<br>\n";
+						@$tooltip.=__($row["Label"]).": ".$dev->{$row["Field"]}."<br>\n";
 					}
 			}
 		}

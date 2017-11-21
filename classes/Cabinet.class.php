@@ -62,7 +62,7 @@ class Cabinet {
 		$this->CabinetHeight=intval($this->CabinetHeight);
 		$this->Model=sanitize($this->Model);
 		$this->Keylock=sanitize($this->Keylock);
-		$this->MaxKW=floatval($this->MaxKW);
+		$this->MaxKW=float_sqlsafe(floatval($this->MaxKW));
 		$this->MaxWeight=intval($this->MaxWeight);
 		$this->InstallationDate=date("Y-m-d", strtotime($this->InstallationDate));
 		$this->MapX1=abs($this->MapX1);
@@ -223,19 +223,23 @@ class Cabinet {
 		}
 	}
 
-	static function ListCabinets($orderbydc=null){
+	static function ListCabinets($orderbydc=false, $indexed=false){
 		global $dbh;
 		global $config;
 
 		$cabinetList=array();
 
 		// if AppendCabDC is set then we will be appending the DC to lists so sort them accordingly
-		$orderbydc=(!is_null($orderbydc) || $config->ParameterArray['AppendCabDC']=='enabled')?'DataCenterID, ':'';
+		$orderbydc=(!$orderbydc || $config->ParameterArray['AppendCabDC']=='enabled')?'DataCenterID, ':'';
 		$sql="SELECT * FROM fac_Cabinet ORDER BY $orderbydc LENGTH(LocationSortable), LocationSortable ASC;";
 
 		foreach($dbh->query($sql) as $cabinetRow){
 			$filter = $config->ParameterArray["FilterCabinetList"] == 'Enabled' ? true:false;
-			$cabinetList[]=Cabinet::RowToObject($cabinetRow, $filter);
+			if ( $indexed ) {
+				$cabinetList[$cabinetRow["CabinetID"]]=Cabinet::RowToObject($cabinetRow, $filter);
+			} else {
+				$cabinetList[]=Cabinet::RowToObject($cabinetRow, $filter);
+			}
 		}
 
 		return $cabinetList;
@@ -464,6 +468,9 @@ class Cabinet {
 		foreach($cduList as &$delCDU){
 			$delCDU->DeletePDU();
 		}
+
+		// Remove from any projects
+		ProjectMembership::removeMember( $this->CabinetID, 'Cabinet' );
 		
 		$sql="DELETE FROM fac_Cabinet WHERE CabinetID=$this->CabinetID;";
 

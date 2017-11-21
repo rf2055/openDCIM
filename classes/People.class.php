@@ -225,8 +225,8 @@ class People {
 				return false;
 			}
 			$cperson->UserID=$_SERVER['REMOTE_USER'];
-			$cperson->GetUserRights();
-		} elseif(AUTHENTICATION=="Oauth" || AUTHENTICATION=="LDAP"){
+			$cperson->GetUserRights( true );
+		} elseif(AUTHENTICATION=="Oauth" || AUTHENTICATION=="LDAP" || AUTHENTICATION=="Saml"){
 			if(!isset($_SESSION['userid'])){
 				return false;
 			}
@@ -263,6 +263,8 @@ class People {
 			foreach( People::RowToObject( $row ) as $prop=>$value ) {
 				$this->$prop=$value;
 			}
+
+			return true;
 		} else {
 			// Kick back a blank record if the PersonID was not found
 			foreach ( $this as $prop => $value ) {
@@ -270,6 +272,8 @@ class People {
 					$this->$prop = '';
 				}
 			}
+
+			return false;
 		}
 	}
 	
@@ -322,7 +326,7 @@ class People {
 		return $userList;
 	}
 	
-	function GetUserRights() {
+	function GetUserRights( $templateNewUsers = false ) {
 		$this->MakeSafe();
 		
 		/* Set all rights to false just in case the object being called is reused */
@@ -340,6 +344,18 @@ class People {
 		if($row=$this->query($sql)->fetch()){
 			foreach(People::RowToObject($row) as $prop => $value){
 				$this->$prop=$value;
+			}
+		} elseif ( $templateNewUsers ) {
+			// For Apache Auth, set up a user based upon a template profile if they don't exist in the db already.  If no template exists, just ignore.
+			$newPerson = new People;
+
+			$newPerson->UserID = "_DEFAULT_";
+			if ( $newPerson->GetPersonByUserID() ) {
+				$newPerson->UserID = $this->UserID;
+				$newPerson->FirstName="";
+				$newPerson->LastName="";
+				$newPerson->Email="";
+				$newPerson->CreatePerson();
 			}
 		}
 

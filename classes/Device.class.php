@@ -47,6 +47,10 @@ class Device {
 	var $SNMPCommunity;
 	var $SNMPFailureCount;
 	var $Hypervisor;
+	var $APIUsername;
+	var $APIPassword;
+	var $APIPort;
+	var $ProxMoxRealm;
 	var $Owner;
 	var $EscalationTimeID;
 	var $EscalationID;
@@ -68,7 +72,7 @@ class Device {
 	var $WarrantyCo;
 	var $WarrantyExpire;
 	var $Notes;
-	var $Reservation;
+	var $Status;
 	var $Rights;
 	var $HalfDepth;
 	var $BackSide;
@@ -100,6 +104,8 @@ class Device {
 		$validv3AuthProtocols=array('MD5','SHA');
 		$validv3PrivProtocols=array('DES','AES');
 
+		$validStatus = DeviceStatus::getStatusNames();
+
 		$this->DeviceID=intval($this->DeviceID);
 		$this->Label=sanitize($this->Label);
 		$this->SerialNo=sanitize($this->SerialNo);
@@ -114,6 +120,10 @@ class Device {
 		$this->v3PrivPassphrase=sanitize($this->v3PrivPassphrase);
 		$this->SNMPFailureCount=intval($this->SNMPFailureCount);
 		$this->Hypervisor=(in_array($this->Hypervisor, $validHypervisors))?$this->Hypervisor:'None';
+		$this->APIUserName=sanitize($this->APIUsername);
+		$this->APIPassword=sanitize($this->APIPassword);
+		$this->APIPort = intval($this->APIPort);
+		$this->ProxMoxRealm=sanitize($this->ProxMoxRealm);
 		$this->Owner=intval($this->Owner);
 		$this->EscalationTimeID=intval($this->EscalationTimeID);
 		$this->EscalationID=intval($this->EscalationID);
@@ -135,7 +145,7 @@ class Device {
 		$this->WarrantyCo=sanitize($this->WarrantyCo);
 		$this->WarrantyExpire=sanitize($this->WarrantyExpire);
 		$this->Notes=sanitize($this->Notes,false);
-		$this->Reservation=intval($this->Reservation);
+		$this->Status=in_array( $this->Status, $validStatus )?$this->Status:"Reserved";
 		$this->HalfDepth=intval($this->HalfDepth);
 		$this->BackSide=intval($this->BackSide);
 		$this->Weight=intval($this->Weight);
@@ -178,6 +188,10 @@ class Device {
 		$dev->SNMPCommunity=$dbRow["SNMPCommunity"];
 		$dev->SNMPFailureCount=$dbRow["SNMPFailureCount"];
 		$dev->Hypervisor=$dbRow["Hypervisor"];
+		$dev->APIUsername=$dbRow["APIUsername"];
+		$dev->APIPassword=$dbRow["APIPassword"];
+		$dev->APIPort=$dbRow["APIPort"];
+		$dev->ProxMoxRealm=$dbRow["ProxMoxRealm"];
 		$dev->Owner=$dbRow["Owner"];
 		// Suppressing errors on the following two because they can be null and that generates an apache error
 		@$dev->EscalationTimeID=$dbRow["EscalationTimeID"];
@@ -200,7 +214,7 @@ class Device {
 		$dev->WarrantyCo=$dbRow["WarrantyCo"];
 		@$dev->WarrantyExpire=$dbRow["WarrantyExpire"];
 		$dev->Notes=$dbRow["Notes"];
-		$dev->Reservation=$dbRow["Reservation"];
+		$dev->Status = $dbRow["Status"];
 		$dev->HalfDepth=$dbRow["HalfDepth"];
 		$dev->BackSide=$dbRow["BackSide"];
 		$dev->AuditStamp=$dbRow["AuditStamp"];
@@ -219,17 +233,28 @@ class Device {
 					$dev->$prop=$val;
 				}
 			}
-			// This will extend the device model but isn't currently being used anywhere
-			if(count($dev->CustomValues)){
-				$dcaList=DeviceCustomAttribute::GetDeviceCustomAttributeList();
-				foreach($dev->CustomValues as $dcaid => $val){
-					$label=$dcaList[$dcaid]->Label;
-					// Keep users from attempting to overwrite shit like devicetype
-					if(!isset($dev->$label)){
-						$dev->$label=$val;
+			// Add in the "all devices" custom attributes 
+			$dcaList=DeviceCustomAttribute::GetDeviceCustomAttributeList();
+			if(isset($dcaList)) {
+				foreach($dcaList as $dca) {
+					if($dca->AllDevices==1) {
+						// this will add in the attribute if it is empty
+						if(!isset($dev->{$dca->Label})){
+							$dev->{$dca->Label}='';
+						}
 					}
 				}
-		//		unset($dev->CustomValues);
+			}
+			// Add in the template specific attributes
+			$tmpl=new DeviceTemplate($dev->TemplateID);
+			$tmpl->GetTemplateByID();
+			if(isset($tmpl->CustomValues)) {
+				foreach($tmpl->CustomValues as $index => $value) {
+					// this will add in the attribute if it is empty
+					if(!isset($dev->{$dcaList[$index]->Label})){
+						$dev->{$dcaList[$index]->Label}='';
+					}
+				}
 			}
 		}
 		if($filterrights){
@@ -263,7 +288,7 @@ class Device {
 
 		// Remove information that this user isn't allowed to see
 		if($this->Rights=='None'){
-			$publicfields=array('DeviceID','Label','Cabinet','Position','Height','Reservation','DeviceType','Rights');
+			$publicfields=array('DeviceID','Label','Cabinet','Position','Height','Status','DeviceType','Rights');
 			foreach($this as $prop => $value){
 				if(!in_array($prop,$publicfields)){
 					$this->$prop=null;
@@ -347,7 +372,7 @@ class Device {
 		$this->Label=transform($this->Label);
 		$this->SerialNo=transform($this->SerialNo);
 		$this->AssetTag=transform($this->AssetTag);
-		
+
 		// SNMPFailureCount isn't in this list, because it should always start at zero 
 		// (default) on new devices
 		$sql="INSERT INTO fac_Device SET Label=\"$this->Label\",  
@@ -358,17 +383,19 @@ class Device {
 			v3AuthPassphrase=\"$this->v3AuthPassphrase\", DeviceType=\"$this->DeviceType\",
 			v3PrivProtocol=\"$this->v3PrivProtocol\", NominalWatts=$this->NominalWatts, 
 			v3PrivPassphrase=\"$this->v3PrivPassphrase\", Weight=$this->Weight,
-			SNMPFailureCount=$this->SNMPFailureCount, Hypervisor=$this->Hypervisor, Owner=$this->Owner, 
-			EscalationTimeID=$this->EscalationTimeID, PrimaryContact=$this->PrimaryContact, 
-			Cabinet=$this->Cabinet, Height=$this->Height, Ports=$this->Ports, 
-			FirstPortNum=$this->FirstPortNum, TemplateID=$this->TemplateID, 
+			SNMPFailureCount=$this->SNMPFailureCount, Hypervisor=\"$this->Hypervisor\", 
+			APIUsername=\"$this->APIUsername\", APIPassword=\"$this->APIPassword\",
+			APIPort=$this->APIPort, ProxMoxRealm=\"$this->ProxMoxRealm\",
+			Owner=$this->Owner, EscalationTimeID=$this->EscalationTimeID, 
+			PrimaryContact=$this->PrimaryContact, Cabinet=$this->Cabinet, Height=$this->Height, 
+			Ports=$this->Ports, FirstPortNum=$this->FirstPortNum, TemplateID=$this->TemplateID, 
 			PowerSupplyCount=$this->PowerSupplyCount, ChassisSlots=$this->ChassisSlots, 
 			RearChassisSlots=$this->RearChassisSlots,ParentDevice=$this->ParentDevice,
 			MfgDate=\"".date("Y-m-d", strtotime($this->MfgDate))."\", 
 			InstallDate=\"".date("Y-m-d", strtotime($this->InstallDate))."\", 
 			WarrantyCo=\"$this->WarrantyCo\", Notes=\"$this->Notes\", 
 			WarrantyExpire=\"".date("Y-m-d", strtotime($this->WarrantyExpire))."\", 
-			Reservation=$this->Reservation, HalfDepth=$this->HalfDepth, 
+			Status=\"$this->Status\", HalfDepth=$this->HalfDepth, 
 			BackSide=$this->BackSide, SerialNo=\"$this->SerialNo\";";
 
 		if(!$dbh->exec($sql)){
@@ -398,6 +425,14 @@ class Device {
 		// Make ports last because they depend on extended devices being created in some cases
 		DevicePorts::createPorts($this->DeviceID);
 		PowerPorts::createPorts($this->DeviceID);
+
+		// Deal with any custom attributes
+		$dcaList=DeviceCustomAttribute::GetDeviceCustomAttributeList(true);
+		// There shouldn't be any to delete, but just in case
+		$this->DeleteCustomValues();
+		foreach(array_intersect_key((array) $this, $dcaList) as $label=>$value){
+			$this->InsertCustomValue($dcaList[$label]->AttributeID, $this->$label);
+		}
 
 		(class_exists('LogActions'))?LogActions::LogThis($this):'';
 
@@ -577,27 +612,42 @@ class Device {
 		}
 	}
 
-	
-	function Surplus() {
-		global $dbh;
-		
-		// Make sure we're not trying to decommission a device that doesn't exist
-		if(!$this->GetDevice()){
-			die( "Can't find device $this->DeviceID to decommission!" );
-		}
-
-		$sql="INSERT INTO fac_Decommission VALUES ( NOW(), \"$this->Label\", 
-			\"$this->SerialNo\", \"$this->AssetTag\", \"{$_SERVER['REMOTE_USER']}\" )";
-
-		if(!$dbh->exec($sql)){
-			$info=$dbh->errorInfo();
-
-			error_log("Surplus::PDO Error: {$info[2]} SQL=$sql");
+	function Dispose( $DispositionID ) {
+		//	Make sure the DispositionID is valid, otherwise just return false
+		$dList = Disposition::getDisposition( $DispositionID );
+		if ( count($dList) != 1 ) {
 			return false;
 		}
-		
-		// Ok, we have the transaction of decommissioning, now tidy up the database.
-		$this->DeleteDevice();
+
+		//	Add the device to the Disposition
+		$person = People::Current();
+		$dm = new DispositionMembership();
+
+		$dm->DispositionID = $DispositionID;
+		$dm->DeviceID = $this->DeviceID;
+		$dm->DisposedBy = $person->UserID;
+
+		$dm->addDevice();
+
+		//	If this was a chassis device, do the same to all children
+		if ($this->ChassisSlots>0 || $this->RearChassisSlots>0){
+			$descList=$this->GetDeviceDescendants();
+			foreach($descList as $child){
+				$child->Dispose();
+			}
+		}
+
+		//	Now sever network and power connections (which should have already been done, but just in case)
+		DevicePorts::removeConnections($this->DeviceID);
+		$pc=new PowerConnection();
+		$pc->DeviceID=$this->DeviceID;
+		$pc->DeleteConnections();
+
+		$this->Status = "Disposed";
+		$this->Cabinet = 0;
+		$this->UpdateDevice();
+
+		return true;
 	}
   
 	function MoveToStorage() {
@@ -621,6 +671,8 @@ class Device {
 		$pc=new PowerConnection();
 		$pc->DeviceID=$this->DeviceID;
 		$pc->DeleteConnections();
+
+		return true;
 	}
   
 	function UpdateDevice() {
@@ -656,7 +708,8 @@ class Device {
 			$cab->CabinetID=$this->Cabinet;
 			$cab->GetCabinet();
 			// Make sure the user has rights to save a device into the new cabinet
-			if($cab->Rights!="Write" && $this->Cabinet!='-1'){return false;}
+			// Cabinet 0 is for disposed devices, Cabinet -1 is storage rooms
+			if($this->Cabinet!='-1' && $this->Cabinet!=0 && $cab->Rights!="Write" ){return false;}
 
 			// Clear the power connections
 			PowerPorts::removeConnections($this->DeviceID);
@@ -696,7 +749,9 @@ class Device {
 			v3AuthPassphrase=\"$this->v3AuthPassphrase\", DeviceType=\"$this->DeviceType\",
 			v3PrivProtocol=\"$this->v3PrivProtocol\", NominalWatts=$this->NominalWatts, 
 			v3PrivPassphrase=\"$this->v3PrivPassphrase\", Weight=$this->Weight,
-			SNMPFailureCount=$this->SNMPFailureCount, Hypervisor=\"$this->Hypervisor\", Owner=$this->Owner, 
+			SNMPFailureCount=$this->SNMPFailureCount, Hypervisor=\"$this->Hypervisor\", 
+			APIUsername=\"$this->APIUsername\", APIPassword=\"$this->APIPassword\",
+			APIPort=$this->APIPort, ProxMoxRealm=\"$this->ProxMoxRealm\", Owner=$this->Owner, 
 			EscalationTimeID=$this->EscalationTimeID, PrimaryContact=$this->PrimaryContact, 
 			Cabinet=$this->Cabinet, Height=$this->Height, Ports=$this->Ports, 
 			FirstPortNum=$this->FirstPortNum, TemplateID=$this->TemplateID, 
@@ -706,7 +761,7 @@ class Device {
 			InstallDate=\"".date("Y-m-d", strtotime($this->InstallDate))."\", 
 			WarrantyCo=\"$this->WarrantyCo\", Notes=\"$this->Notes\", 
 			WarrantyExpire=\"".date("Y-m-d", strtotime($this->WarrantyExpire))."\", 
-			Reservation=$this->Reservation, HalfDepth=$this->HalfDepth, 
+			Status=\"$this->Status\", HalfDepth=$this->HalfDepth, 
 			BackSide=$this->BackSide WHERE DeviceID=$this->DeviceID;";
 
 		// If the device won't update for some reason there is no cause to touch 
@@ -825,9 +880,28 @@ class Device {
 			$pdu->UpdatePDU();
 		}
 
+		// Deal with any custom attributes
+		$dcaList=DeviceCustomAttribute::GetDeviceCustomAttributeList(true);
+		$this->DeleteCustomValues();
+		foreach(array_intersect_key((array) $this, $dcaList) as $label=>$value){
+			$this->InsertCustomValue($dcaList[$label]->AttributeID, $value);
+		}
+
 		//Update children, if necesary
 		if ($this->ChassisSlots>0 || $this->RearChassisSlots>0){
 				$this->SetChildDevicesCabinet();
+		}
+
+		// See if this device had been previously marked as disposed - if so, remove from that listing and do some
+		// sanity checks (also done in the UI, but this could be an API update)
+		if ( $tmpDev->Status == "Disposed" && $this->Status != "Disposed" ) {
+			DispositionMembership::removeDevice( $this->DeviceID );
+		}
+
+		if ( $this->Status == "Disposed" ) {
+			// Don't allow items still marked as disposed to be placed in a cabinet at all
+			$this->Cabinet = 0;
+			$this->Position = 0;
 		}
 		
 		(class_exists('LogActions'))?LogActions::LogThis($this,$tmpDev):'';
@@ -1033,9 +1107,9 @@ class Device {
 
 		// Since we are only concerned with physical space being occupied in terms of capacity, don't worry about child devices
 		if ( $Days == null ) {
-			$sql = "select * from fac_Device where Reservation=true order by InstallDate ASC";
+			$sql = "select * from fac_Device where Status='Reserved' order by InstallDate ASC";
 		} else {
-			$sql = sprintf( "select * from fac_Device where Reservation=true and InstallDate<=(CURDATE()+%d) ORDER BY InstallDate ASC", $Days );
+			$sql = sprintf( "select * from fac_Device where Status='Reserved' and InstallDate<=(CURDATE()+%d) ORDER BY InstallDate ASC", $Days );
 		}
 		
 		$devList = array();
@@ -1051,7 +1125,7 @@ class Device {
 		global $dbh;
 
 		// Since we are only concerned with physical space being occupied in terms of capacity, don't worry about child devices
-		$sql = sprintf( "select a.* from fac_Device a, fac_Cabinet b where a.Cabinet=b.CabinetID and b.DataCenterID=%d and Reservation=true order by a.InstallDate ASC, a.Cabinet ASC", $dc );
+		$sql = sprintf( "select a.* from fac_Device a, fac_Cabinet b where a.Cabinet=b.CabinetID and b.DataCenterID=%d and Status='Reserved' order by a.InstallDate ASC, a.Cabinet ASC", $dc );
 		
 		$devList = array();
 
@@ -1066,7 +1140,7 @@ class Device {
 		global $dbh;
 
 		// Since we are only concerned with physical space being occupied in terms of capacity, don't worry about child devices
-		$sql = sprintf( "select * from fac_Device where Owner=%d and Reservation=true order by InstallDate ASC, Cabinet ASC", $Owner );
+		$sql = sprintf( "select * from fac_Device where Owner=%d and Status='Reserved' order by InstallDate ASC, Cabinet ASC", $Owner );
 		
 		$devList = array();
 
@@ -1149,6 +1223,9 @@ class Device {
 			$pdu->PDUID=$this->DeviceID;
 			$pdu->DeletePDU();
 		}
+
+		// Delete any project membership
+		ProjectMembership::removeMember( $this->DeviceID, 'Device' );
 	
 		// Delete all network connections first
 		DevicePorts::removePorts($this->DeviceID);
@@ -1170,7 +1247,7 @@ class Device {
 		}
 
 		(class_exists('LogActions'))?LogActions::LogThis($this):'';
-		return;
+		return true;
 	}
 
 	function SearchDevicebyLabel(){
@@ -1192,7 +1269,7 @@ class Device {
 	function SearchDevicebyIP(){
 		$this->MakeSafe();
 		
-		$sql="SELECT * FROM fac_Device WHERE PrimaryIP LIKE \"%$this->PrimaryIP%\" ORDER BY Label;";
+		$sql="SELECT * FROM fac_Device WHERE Status<>'Disposed' AND PrimaryIP LIKE \"%$this->PrimaryIP%\" ORDER BY Label;";
 
 		$deviceList = array();
 		foreach($this->query($sql) as $deviceRow){
@@ -1210,7 +1287,7 @@ class Device {
 		$sql="SELECT *, (SELECT b.DataCenterID FROM fac_Device a, fac_Cabinet b 
 			WHERE a.Cabinet=b.CabinetID AND a.DeviceID=search.DeviceID ORDER BY 
 			b.DataCenterID, a.Label) DataCenterID FROM fac_Device search WHERE 
-			Owner=$this->Owner ORDER BY Label;";
+			Status<>'Disposed' AND Owner=$this->Owner ORDER BY Label;";
 
 		$deviceList=array();
 
@@ -1221,10 +1298,10 @@ class Device {
 		return $deviceList;
 	}
 
-  function GetESXDevices() {
+        function GetESXDevices() {
 		global $dbh;
 		
-		$sql="SELECT * FROM fac_Device WHERE ESX=TRUE ORDER BY DeviceID;";
+		$sql="SELECT * FROM fac_Device WHERE Status<>'Disposed' AND Hypervisor='ESX' ORDER BY DeviceID;";
 
 		$deviceList = array();
 
@@ -1248,12 +1325,31 @@ class Device {
 		// Make everything safe for us to search with
 		$this->MakeSafe();
 
+		// Set this to assume we don't need to add in custom attributes until we explicitly need to
+		$customSQL="";
+		$attrList=DeviceCustomAttribute::GetDeviceCustomAttributeList(true);
+
 		// This will store all our extended sql
 		$sqlextend="";
 		foreach($o as $prop => $val){
-			extendsql($prop,$this->$prop,$sqlextend,$loose);
+			if(property_exists("Device",$prop)){
+				extendsql($prop,$this->$prop,$sqlextend,$loose);
+			}else{
+				if(array_key_exists($prop,$attrList)){
+					attribsql($attrList[$prop]->AttributeID,$val,$customSQL,$loose);
+				}else{
+					// The requested attribute is not valid.  Ain't nobody got time for that!
+				}
+			}
 		}
-		$sql="SELECT * FROM fac_Device $sqlextend ORDER BY Label ASC;";
+		if($sqlextend==""){
+			// No base attributes to search, only custom
+			$sqlextend="WHERE TRUE";
+		}
+		if($customSQL!=""){
+			$customSQL="AND DeviceID IN (SELECT DeviceID FROM fac_DeviceCustomValue $customSQL)";
+		}
+		$sql="SELECT * FROM fac_Device $sqlextend $customSQL ORDER BY Label ASC;";
 
 		$deviceList=array();
 
@@ -1481,7 +1577,7 @@ class Device {
 		global $dbh;
 		
 		$sql="SELECT SUM(Height) AS RackUnits,fac_Department.Name AS OwnerName FROM 
-			fac_Device,fac_Department WHERE Owner IS NOT NULL AND 
+			fac_Device,fac_Department WHERE Owner IS NOT NULL AND fac_Device.Status<>'Disposed' AND
 			fac_Device.Owner=fac_Department.DeptID GROUP BY Owner ORDER BY RackUnits 
 			DESC LIMIT 0,10";
 
@@ -1499,7 +1595,7 @@ class Device {
 		global $dbh;
 		
 		$sql="SELECT SUM(NominalWatts) AS TotalPower,fac_Department.Name AS OwnerName 
-			FROM fac_Device,fac_Department WHERE Owner IS NOT NULL AND 
+			FROM fac_Device,fac_Department WHERE Owner IS NOT NULL AND fac_Device.Status<>'Disposed' AND
 			fac_Device.Owner=fac_Department.DeptID GROUP BY Owner ORDER BY TotalPower 
 			DESC LIMIT 0,10";
 
@@ -2098,13 +2194,12 @@ class Device {
 
 		$this->MakeSafe();
 		$dcv = array();
-		$sql = "SELECT DeviceID, AttributeID, Value
-			FROM fac_DeviceCustomValue
-			WHERE DeviceID = $this->DeviceID;";
+		$sql = "SELECT v.DeviceID, v.AttributeID, a.Label, v.Value
+				FROM fac_DeviceCustomValue AS v, fac_DeviceCustomAttribute AS a
+				WHERE DeviceID = $this->DeviceID AND v.AttributeID = a.AttributeID";
 		foreach($dbh->query($sql) as $dcvrow){
-			$dcv[$dcvrow["AttributeID"]]=$dcvrow["Value"];
+			$this->{$dcvrow["Label"]}=$dcvrow["Value"];
 		}
-		$this->CustomValues=$dcv;
 	}	
 
 	function DeleteCustomValues() {
@@ -2131,16 +2226,13 @@ class Device {
 		$AttributeID = intval($AttributeID);
 		$Value=sanitize(trim($Value));
 
-		$sql = "INSERT INTO fac_DeviceCustomValue 
-			SET DeviceID = $this->DeviceID,
-			AttributeID = $AttributeID,
-			Value = \"$Value\";";
+		$sql = "INSERT INTO fac_DeviceCustomValue SET DeviceID = $this->DeviceID,
+			AttributeID = $AttributeID, Value = \"$Value\";";
 		if($dbh->query($sql)) {
-			$this->GetCustomValues();
-			(class_exists('LogActions'))?LogActions::LogThis($this):'';
 			return true;
+		}else{
+			return false;
 		}
-		return false;
 	}
 	function SetChildDevicesCabinet(){
 		global $dbh;
@@ -2192,6 +2284,11 @@ class Device {
 
 			$temp=($t->TemperatureOID)?floatval(self::OSS_SNMP_Lookup($dev,null,"$t->TemperatureOID")):0;
 			$humidity=($t->HumidityOID)?floatval(self::OSS_SNMP_Lookup($dev,null,"$t->HumidityOID")):0;
+
+			// Make the temp and humidity safe for sql
+			$temp=float_sqlsafe($temp);
+			$humidity=float_sqlsafe($humidity);
+
 			// Strip out everything but numbers
 			// not sure these are needed anymore thanks to the OSS_SNMP library
 			$temp=preg_replace("/[^0-9.,+]/","",$temp);
@@ -2259,5 +2356,26 @@ class Device {
 
 		return $readings;
 	}	
+
+	static function resetCounter( $deviceID=false ) {
+		// Simple call to reset all counters
+		global $dbh;
+
+		$p = People::Current();
+		if ( ! $p->SiteAdmin ) {
+			return false;
+		}
+		
+		if ( $deviceID != false ) {
+			$clause = "WHERE DeviceID=" . intval( $deviceID );
+		}
+
+		$sql = "update fac_Device set SNMPFailureCount=0 $clause";
+		if ( !$dbh->query($sql)) {
+			return false;
+		} else {
+			return true;
+		}
+	}
 }
 ?>

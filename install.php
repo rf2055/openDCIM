@@ -1,5 +1,5 @@
 <?php
-$codeversion="4.3.1";
+$codeversion="4.4.1";
 
 require_once( "preflight.inc.php" );
 
@@ -143,7 +143,7 @@ function ArraySearchRecursive($Needle,$Haystack,$NeedleKey="",$Strict=false,$Pat
 	}
 	if(AUTHENTICATION=="Apache"){
 		$person->UserID=$_SERVER['REMOTE_USER'];
-	}elseif(AUTHENTICATION=="Oauth" || AUTHENTICATION=="LDAP"){
+	}elseif(AUTHENTICATION=="Oauth" || AUTHENTICATION=="LDAP" || AUTHENTICATION=="Saml"){
 		$person->UserID=$_SESSION['userid'];
 	}
 	/* Check the table to see if there are any users
@@ -806,7 +806,7 @@ function upgrade(){
 				$this->AssetTag=transform($this->AssetTag);
 				
 				$sql="INSERT INTO fac_Device SET Label=\"$this->Label\", SerialNo=\"$this->SerialNo\", AssetTag=\"$this->AssetTag\", 
-					PrimaryIP=\"$this->PrimaryIP\", SNMPCommunity=\"$this->SNMPCommunity\", ESX=$this->ESX, Owner=$this->Owner, 
+					PrimaryIP=\"$this->PrimaryIP\", SNMPCommunity=\"$this->SNMPCommunity\", Hypervisor=$this->Hypervisor, Owner=$this->Owner, 
 					EscalationTimeID=$this->EscalationTimeID, EscalationID=$this->EscalationID, PrimaryContact=$this->PrimaryContact, 
 					Cabinet=$this->Cabinet, Position=$this->Position, Height=$this->Height, Ports=$this->Ports, 
 					FirstPortNum=$this->FirstPortNum, TemplateID=$this->TemplateID, NominalWatts=$this->NominalWatts, 
@@ -1103,6 +1103,40 @@ function upgrade(){
 	}
 	if($version=="4.3"){
 		$results[]=applyupdate("db-4.3-to-4.3.1.sql");
+
+		$config->rebuild();
+	}
+	if($version=="4.3.1"){
+		$results[]=applyupdate("db-4.3.1-to-4.4.sql");
+
+		$config->rebuild();
+	}
+	if($version=="4.4"){
+		$results[]=applyupdate("db-4.4-to-4.5.sql");
+
+		$st = $dbh->prepare( "select * from fac_Decommission order by SurplusDate ASC" );
+		$dt = $dbh->prepare( "insert into fac_Device set Label=:Label, SerialNo=:SerialNo, AssetTag=:AssetTag, Status='Disposed'" );
+		$lt = $dbh->prepare( "insert into fac_DispositionMembership values (1, :DeviceID, :DispositionDate, :DisposedBy )");
+
+		// Fetch from the legacy surplus table
+		$st->execute( array() );
+		while ( $row = $st->fetch() ) {
+			// Insert a new device for this one
+			$dt->execute( array( ":Label"=>$row["Label"],
+					":SerialNo"=>$row["SerialNo"],
+					":AssetTag"=>$row["AssetTag"] ));
+
+			// Get the new DeviceID (yes, I know, these all were originally in the fac_Device table)
+			$devID = $dbh->lastInsertId();
+
+			// Now add the logging / membership record
+			$lt->execute( array( ":DeviceID"=>$devID,
+				":DispositionDate"=>$row["SurplusDate"],
+				":DisposedBy"=>$row["UserID"]));
+		}
+
+		// Now shit can the old table
+		$dbh->query( "DROP TABLE fac_Decommission" );
 
 		$config->rebuild();
 	}

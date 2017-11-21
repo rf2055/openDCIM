@@ -23,9 +23,7 @@
 
 	if (isset($_POST['action']) && $_POST['action'] == 'Send'){
 
-		require_once( "swiftmailer/swift_required.php" );
 		require_once( "connections_spreadsheet.php" );
-		require_once( "PHPExcel/PHPExcel/Writer/Excel2007.php" );
 
 		$mediaIDList = array();
 		if(isset($_COOKIE['connectionsMediaList'])){
@@ -122,6 +120,32 @@
 			$.removeCookie('workOrder');
 			location.href="index.php";
 		});
+		$('#unreserve').click(function(){
+			var workList = JSON.parse($.cookie("workOrder"));
+			for(var x in workList) {
+				if ( workList[x] != 0 ) {
+					// We are only updating one field, so basically we don't
+					// give a damn about pulling the existing data in
+					$.ajax({
+						type: "POST",
+						url: "/api/v1/device/"+workList[x],
+						data: { "Reservation" : "0" }
+					});
+				}
+			}
+		});
+		$('#storage').click(function(){
+			// Pretty much the same as the unreserve function
+			var workList = JSON.parse($.cookie("workOrder"));
+			for(var x in workList) {
+				if ( workList[x] != 0 ) {
+					$.ajax({
+						type: "POST",
+						url: "/api/v1/device/"+workList[x]+"/store"
+					});
+				}
+			}
+		});
 		storeMediaList();
 	});
 </script>
@@ -203,9 +227,10 @@
 
 	print $checklist.'</div></div><br/><div style="display: block; margin: auto;">
 <a href="export_port_connections.php?deviceid=wo"><button type="button">'.__("Export Connections").'</button></a>
-<button type="submit" name="action" value="Send">'.__("Send Connections to Data Center Team").'</button>';
+<button type="submit" name="action" value="Send">'.__("Email to DC Team Address").'</button>';
 ?>
-
+<button type="button" id="unreserve"><?php print __("Clear Reservation Flag"); ?></button>
+<button type="button" id="storage"><?php print __("Move Items to Storage"); ?></button>
 <button type="button" id="clear"><?php print __("Clear"); ?></button></div>
 </form>
 </div></div>

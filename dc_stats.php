@@ -16,7 +16,28 @@
 				//update all row
 				$cabinets=$cab->GetCabinetsByRow();
 				foreach($cabinets as $index => $cabinet){
-					$cabinet->FrontEdge=$_POST["airflow"];
+					if ( in_array( $_POST['airflow'], array( "Top", "Bottom", "Left", "Right"))) {
+						// This is an update to the airflow
+						$cabinet->FrontEdge=$_POST["airflow"];
+					} else {
+						// This is an alignment command
+						switch( $_POST['airflow'] ) {
+							case "ATop":
+								$cabinet->MapY1 = $cab->MapY1;
+								break;
+							case "ALeft":
+								$cabinet->MapX1 = $cab->MapX1;
+								break;
+							case "ABottom":
+								$cabinet->MapY2 = $cab->MapY2;
+								break;
+							case "ARight":
+								$cabinet->MapX2 = $cab->MapX2;
+								break;
+							default:
+								// Update nothing, because invalid input was supplied
+						}
+					}
 					$cabinet->UpdateCabinet();
 				}
 			}else{
@@ -34,7 +55,7 @@
 			$cab->DataCenterID=$_POST['dc'];
 			$zone=new Zone();
 			$zone->DataCenterID=$cab->DataCenterID;
-			$payload=array('cab'=>$cab->ListCabinetsByDC(true),'zone'=>$zone->GetZonesByDC(true));
+			$payload=array('cab'=>$cab->ListCabinetsByDC(true),'panel'=>PowerPanel::getPanelsForMap($_POST['dc']),'zone'=>$zone->GetZonesByDC(true));
 		}else{
 			$dc->DataCenterID=$_POST['dc'];
 			$dc->GetDataCenterByID();
@@ -66,7 +87,13 @@
 			$mapfile="drawings".DIRECTORY_SEPARATOR.$dc->DrawingFileName;
 		   
 			if(file_exists($mapfile)){
-				list($width, $height, $type, $attr)=getimagesize($mapfile);
+				if(mime_content_type($mapfile)=='image/svg+xml'){
+					$svgfile = simplexml_load_file($mapfile);
+					$width = substr($svgfile['width'],0,4);
+					$height = substr($svgfile['height'],0,4);
+				}else{
+					list($width, $height, $type, $attr)=getimagesize($mapfile);
+				}
 				$mapHTML="<div class=\"canvas\" style=\"background-image: url('drawings/$dc->DrawingFileName')\">
 	<img src=\"css/blank.gif\" usemap=\"#datacenter\" width=\"$width\" height=\"$height\" alt=\"clearmap over canvas\">
 	<map name=\"datacenter\" data-dc=$dc->DataCenterID data-zoom=1 data-x1=0 data-y1=0>
@@ -84,8 +111,14 @@
 	if(strlen($dc->DrawingFileName) >0){
 		$mapfile="drawings/$dc->DrawingFileName";
 		if(file_exists($mapfile)){
-			list($width, $height, $type, $attr)=getimagesize($mapfile);
-			// There is a bug in the excanvas shim that can set the width of the canvas to 10x the width of the image
+			if(mime_content_type($mapfile)=='image/svg+xml'){
+				$svgfile = simplexml_load_file($mapfile);
+				$width = substr($svgfile['width'],0,4);
+				$height = substr($svgfile['height'],0,4);
+			}else{
+				list($width, $height, $type, $attr)=getimagesize($mapfile);
+			}
+// There is a bug in the excanvas shim that can set the width of the canvas to 10x the width of the image
 			$ie8fix="
 <script type=\"text/javascript\">
 	function uselessie(){
@@ -132,6 +165,10 @@ $(document).ready(function() {
   <script type="text/javascript" src="scripts/jquery-ui.min.js"></script>
   <script type="text/javascript" src="scripts/common.js"></script>
   <script type="text/javascript" src="scripts/jquery.ui-contextmenu.js"></script>
+  <script type="text/javascript">
+  	var js_outlinecabinets = <?php print $config->ParameterArray["OutlineCabinets"] == 'enabled'?1:0; ?>;
+  	var js_labelcabinets = <?php print $config->ParameterArray["LabelCabinets"] == 'enabled'?1:0; ?>;
+  </script>
   <!--[if lte IE 8]>
     <link rel="stylesheet"  href="css/ie.css" type="text/css">
     <?php if(isset($ie8fix)){print $ie8fix;} ?>
@@ -148,7 +185,7 @@ echo '<div class="main">
 <div class="center"><div>
 <div class="centermargin" id="dcstats">
 <div class="table border">
-  <div class="title">',$dc->Name,'<span><a href="search_export.php?datacenterid=',$dc->DataCenterID,'">',__("Export"),'</a>&nbsp;,&nbsp;<a href="report_xml_CFD.php?datacenterid=',$dc->DataCenterID,'">',__("XML"),'</a></span></div>
+  <div class="title">',$dc->Name,'<span><a href="search_export.php?datacenterid=',$dc->DataCenterID,'">',__("Export"),'</a>&nbsp;,&nbsp;<a href="report_xml_CFD.php?datacenterid=',$dc->DataCenterID,'">',__("XML"),'</a></span><div class="hide" id="msg_show">',__("Click to show statistics"),'</div><div class="hide" id="msg_hide">',__("Click to hide statistics"),'</div></div>
   <div>
 	<div></div>
 	<div>',__("Infrastructure"),'</div>
@@ -171,6 +208,16 @@ echo '<div class="main">
 	<div>',(($dcStats["TotalU"])?sprintf("%3.1f%%",$dcStats["Available"]/$dcStats["TotalU"]*100):"0"),'</div>
   </div>
 </div> <!-- END div.table -->
+<div class="table border">
+  <div>
+    <div>',__("Delivery Address"),'</div>
+    <div>',$dc->DeliveryAddress,'</div>
+  </div>
+  <div>
+    <div>',__("Administrator"),'</div>
+    <div>',$dc->Administrator,'</div>
+  </div>
+</div>
 <div class="table border">
   <div>
         <div>',__("Computed Wattage"),'</div>
@@ -264,10 +311,18 @@ echo '
 	</li>
 	<li><a href="#row">',__("Row"),'</a>
 		<ul data-context="row">
-			<li><a href="#Test">',__("Top"),'</a></li>
+			<li><a href="#Top">',__("Top"),'</a></li>
 			<li><a href="#Right">',__("Right"),'</a></li>
 			<li><a href="#Bottom">',__("Bottom"),'</a></li>
 			<li><a href="#Left">',__("Left"),'</a></li>
+		</ul>
+	</li>
+	<li><a href="#alignment">',__("Alignment"),'</a>
+		<ul data-context="alignment">
+			<li><a href="#ATop">',__("Align Top"),'</a></li>
+			<li><a href="#ALeft">',__("Align Left"),'</a></li>
+			<li><a href="#ABottom">',__("Align Bottom"),'</a></li>
+			<li><a href="#ARight">',__("Align Right"),'</a></li>
 		</ul>
 	</li>
 </ul>';
@@ -276,6 +331,29 @@ echo '
 </div><!-- END div.main -->
 </div><!-- END div.page -->
 <script type="text/javascript">
+	// Turn the stats box at the top into a lampshade
+	$('#dcstats .title').css({'position':'relative'});
+	$('#dcstats .title > div').css({'border':'0 none','bottom':'-3px','font-size':'xx-small','position':'absolute','right':0}).hide().removeClass('hide');
+	$('#msg_hide').show();
+	$('#dcstats').outerWidth($('#dcstats').outerWidth());
+	$('#dcstats .title').on('click',function(e){
+		// this check just prevents the shade from opening / closing
+		// when you click the links in the box and it had a weird feel
+		if(e.target.nodeName != 'A'){
+			if($('#msg_hide').is(':visible')){
+				$('#msg_hide').hide();
+				$('#msg_show').show();
+				$('#dcstats > div:nth-child(n+2)').hide();
+				$('#dcstats > div:first-child > div:nth-child(n+2)').hide();
+			}else{
+				$('#msg_hide').show();
+				$('#msg_show').hide();
+				$('#dcstats > div:nth-child(n+2)').show();
+				$('#dcstats > div:first-child > div:nth-child(n+2)').show();
+			}
+		}
+	}).trigger('click');
+
 	$(document).ready(function() {
 		// Hard set widths to stop IE from being retarded
 		$('#mapCanvas').css('width', $('.canvas > img[alt="clearmap over canvas"]').width()+'px');
@@ -301,7 +379,7 @@ echo '
 			delegate: "area[name^=cab]",
 			menu: "#options",
 			select: function(event, ui) {
-				var row=(ui.item.context.parentElement.getAttribute('data-context')=='row')?true:false;
+				var row=(ui.item.context.parentElement.getAttribute('data-context')=='row'||ui.item.context.parentElement.getAttribute('data-context')=='alignment')?true:false;
 				var cabid=ui.target.context.attributes.name.value.substr(3);
 				$.post('',{cabinetid: cabid, airflow: ui.cmd, row: row}).done(function(){startmap()}); 
     		},

@@ -17,7 +17,28 @@
 				//update all row
 				$cabinets=$cab->GetCabinetsByRow();
 				foreach($cabinets as $index => $cabinet){
-					$cabinet->FrontEdge=$_POST["airflow"];
+					if ( in_array( $_POST['airflow'], array( "Top", "Bottom", "Left", "Right"))) {
+						// This is an update to the airflow
+						$cabinet->FrontEdge=$_POST["airflow"];
+					} else {
+						// This is an alignment command
+						switch( $_POST['airflow'] ) {
+							case "ATop":
+								$cabinet->MapY1 = $cab->MapY1;
+								break;
+							case "ALeft":
+								$cabinet->MapX1 = $cab->MapX1;
+								break;
+							case "ABottom":
+								$cabinet->MapY2 = $cab->MapY2;
+								break;
+							case "ARight":
+								$cabinet->MapX2 = $cab->MapX2;
+								break;
+							default:
+								// Update nothing, because invalid input was supplied
+						}
+					}
 					$cabinet->UpdateCabinet();
 				}
 			}else{
@@ -37,7 +58,7 @@
 			$cab->GetCabinet();
 			$zone=new Zone();
 			$zone->DataCenterID=$cab->DataCenterID;
-			$payload=array('cab'=>$cab->ListCabinetsByDC(true,true),'zone'=>$zone->GetZonesByDC(true));
+			$payload=array('cab'=>$cab->ListCabinetsByDC(true,true),'panel'=>PowerPanel::getPanelsForMap($_POST['dc']),'zone'=>$zone->GetZonesByDC(true));
 		}else{
 			$dc->DataCenterID=$_POST['dc'];
 			$dc->GetDataCenterByID();
@@ -73,10 +94,16 @@
 		if(strlen($dc->DrawingFileName)>0){
 			$mapfile="drawings/".$dc->DrawingFileName;
 			if(file_exists($mapfile)){
+				if(mime_content_type($mapfile)=='image/svg+xml'){
+				$svgfile = simplexml_load_file($mapfile);
+				$width = substr($svgfile['width'],0,4);
+				$height = substr($svgfile['height'],0,4);
+			}else{
 				list($width, $height, $type, $attr)=getimagesize($mapfile);
-				$width=($zone->MapX2-$zone->MapX1)*$zoom;
-				$height=($zone->MapY2-$zone->MapY1)*$zoom;
-				$mapHTML.="\t<div class=\"canvas\">
+			}
+			$width=($zone->MapX2-$zone->MapX1)*$zoom;
+			$height=($zone->MapY2-$zone->MapY1)*$zoom;
+			$mapHTML.="\t<div class=\"canvas\">
 		<canvas id=\"background\" width=\"$width\" height=\"$height\" data-image=\"$mapfile\"></canvas>
 		<img src=\"css/blank.gif\" usemap=\"#datacenter\" width=\"$width\" height=\"$height\" alt=\"clearmap over canvas\">
 		<map name=\"datacenter\" data-dc=$dc->DataCenterID data-zoom=$zoom data-x1=$zone->MapX1 data-y1=$zone->MapY1>
@@ -93,7 +120,13 @@
 	if(strlen($dc->DrawingFileName) >0){
 		$mapfile="drawings/$dc->DrawingFileName";
 		if(file_exists($mapfile)){
-			list($width, $height, $type, $attr)=getimagesize($mapfile);
+			if(mime_content_type($mapfile)=='image/svg+xml'){
+				$svgfile = simplexml_load_file($mapfile);
+				$width = substr($svgfile['width'],0,4);
+				$height = substr($svgfile['height'],0,4);
+			}else{
+				list($width, $height, $type, $attr)=getimagesize($mapfile);
+			}
 			// There is a bug in the excanvas shim that can set the width of the canvas to 10x the width of the image
 			$ie8fix="
 <script type=\"text/javascript\">
@@ -149,6 +182,10 @@ $(document).ready(function() {
   <script type="text/javascript" src="scripts/jquery-ui.min.js"></script>
   <script type="text/javascript" src="scripts/common.js"></script>
   <script type="text/javascript" src="scripts/jquery.ui-contextmenu.js"></script>
+  <script type="text/javascript">
+  	var js_outlinecabinets = <?php print $config->ParameterArray["OutlineCabinets"] == 'enabled'?1:0; ?>;
+  	var js_labelcabinets = <?php print $config->ParameterArray["LabelCabinets"] == 'enabled'?1:0; ?>;
+  </script>
 </head>
 <body>
 <?php include( 'header.inc.php' ); ?>
@@ -276,6 +313,14 @@ echo '
 			<li><a href="#Left">',__("Left"),'</a></li>
 		</ul>
 	</li>
+	<li><a href="#alignment">',__("Alignment"),'</a>
+		<ul data-context="alignment">
+			<li><a href="#ATop">',__("Align Top"),'</a></li>
+			<li><a href="#ALeft">',__("Align Left"),'</a></li>
+			<li><a href="#ABottom">',__("Align Bottom"),'</a></li>
+			<li><a href="#ARight">',__("Align Right"),'</a></li>
+		</ul>
+	</li>
 </ul>';
 ?>
 
@@ -307,7 +352,7 @@ echo '
 			delegate: "area[name^=cab]",
 			menu: "#options",
 			select: function(event, ui) {
-				var row=(ui.item.context.parentElement.getAttribute('data-context')=='row')?true:false;
+				var row=(ui.item.context.parentElement.getAttribute('data-context')=='row'||ui.item.context.parentElement.getAttribute('data-context')=='alignment')?true:false;
 				var cabid=ui.target.context.attributes.name.value.substr(3);
 				$.post('',{cabinetid: cabid, airflow: ui.cmd, row: row}).done(function(){startmap()}); 
     		},

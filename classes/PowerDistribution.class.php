@@ -59,7 +59,7 @@ class PowerDistribution {
 		$this->FirmwareVersion=sanitize($this->FirmwareVersion);
 		$this->PanelID=intval($this->PanelID);
 		$this->BreakerSize=intval($this->BreakerSize);
-		$this->PanelPole=intval($this->PanelPole);
+		$this->PanelPole=sanitize($this->PanelPole);
 		$this->InputAmperage=intval($this->InputAmperage);
 		$this->FailSafe=intval($this->FailSafe);
 		$this->PanelID2=intval($this->PanelID2);
@@ -179,7 +179,7 @@ class PowerDistribution {
 			CabinetID=$this->CabinetID, TemplateID=$this->TemplateID, 
 			IPAddress=\"$this->IPAddress\", SNMPCommunity=\"$this->SNMPCommunity\", 
 			PanelID=$this->PanelID, BreakerSize=$this->BreakerSize, 
-			PanelPole=$this->PanelPole, InputAmperage=$this->InputAmperage, 
+			PanelPole=\"$this->PanelPole\", InputAmperage=$this->InputAmperage, 
 			FailSafe=$this->FailSafe, PanelID2=$this->PanelID2, 
 			PanelPole2=$this->PanelPole2$sqladdon;";
 
@@ -208,7 +208,7 @@ class PowerDistribution {
 			CabinetID=$this->CabinetID, TemplateID=$this->TemplateID, 
 			IPAddress=\"$this->IPAddress\", SNMPCommunity=\"$this->SNMPCommunity\", 
 			PanelID=$this->PanelID, BreakerSize=$this->BreakerSize, 
-			PanelPole=$this->PanelPole, InputAmperage=$this->InputAmperage, 
+			PanelPole=\"$this->PanelPole\", InputAmperage=$this->InputAmperage, 
 			FailSafe=$this->FailSafe, PanelID2=$this->PanelID2, PanelPole2=$this->PanelPole2
 			WHERE PDUID=$this->PDUID;";
 
@@ -417,9 +417,12 @@ class PowerDistribution {
 						break;
 				}
 			}
-			
+			// Make the float safe for insert into mysql
+			$watts=float_sqlsafe($watts);
+
 			$sql="INSERT INTO fac_PDUStats SET PDUID={$row["PDUID"]}, Wattage=$watts, 
 				LastRead=now() ON DUPLICATE KEY UPDATE Wattage=$watts, LastRead=now();";
+
 			if(!$dbh->query($sql)){
 				$info=$dbh->errorInfo();
 				error_log("PowerDistribution::UpdateStats::PDO Error: {$info[2]} SQL=$sql");

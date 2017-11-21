@@ -100,7 +100,7 @@
 		$cab->Keylock=null;
 		$cab->MaxKW=null;
 		$cab->MaxWeight=null;
-		$cab->InstallationDate=date('m/d/Y');
+		$cab->InstallationDate=date('Y-m-d');
 	}
 
 	$deptList=$dept->GetDepartmentList();
@@ -202,8 +202,16 @@
 		// Init form
 		$('#datacenterid').trigger('change');
 
+		$("#cabinetid").combobox();
+		$("#datacenterid").combobox();
+		$("#assignedto").combobox();
+		$("#zoneid").combobox();
+		$("#cabrowid").combobox();
+
+		$('span.custom-combobox').width($('span.custom-combobox').width()+2);
+
 		$('#rackform').validationEngine({});
-		$('input[name="installationdate"]').datepicker({});
+		$('input[name="installationdate"]').datepicker({dateFormat: "yy-mm-dd"});
 		$('#tags').width($('#tags').parent('div').parent('div').innerWidth()-$('#tags').parent('div').prev('div').outerWidth()-5);
 		
 		$('#tags').textext({
@@ -232,7 +240,7 @@ echo '<div class="main">
 <div class="table">
 <div>
    <div>',__("Cabinet"),'</div>
-   <div><select name="cabinetid">
+   <div><select name="cabinetid" id="cabinetid">
    <option value=0>',__("New Cabinet"),'</option>';
 
 	foreach($cabList as $cabRow){
@@ -262,7 +270,7 @@ echo '		</select>
 </div>
 <div>
   <div>',__("Assigned To"),':</div>
-  <div><select name="assignedto">
+  <div><select name="assignedto" id="assignedto">
     <option value=0>',__("General Use"),'</option>';
 
 	foreach($deptList as $deptRow){
@@ -315,7 +323,7 @@ echo '</select></div>
 </div>
 <div>
    <div>',__("Date of Installation"),'</div>
-   <div><input type="text" name="installationdate" size=15 value="',date('m/d/Y', strtotime($cab->InstallationDate)),'"></div>
+   <div><input type="text" name="installationdate" size=15 value="',date('Y-m-d', strtotime($cab->InstallationDate)),'"></div>
 </div>
 <div>
 	<div><label for="tags">',__("Tags"),'</label></div>

@@ -173,20 +173,25 @@ function renderUnassignedTemplateOwnership($noTemplFlag, $noOwnerFlag, $device) 
 
 	$totalWatts=$stats->Wattage;
 	$totalWeight=$stats->Weight;
-	$totalMoment=0;
 
-	if($config->ParameterArray["ReservedColor"] != "#FFFFFF" || $config->ParameterArray["FreeSpaceColor"] != "#FFFFFF"){
-		$head .= "		<style type=\"text/css\">
-			.reserved {background-color: {$config->ParameterArray['ReservedColor']} !important;}
+	$legend.='<div class="legenditem hide"><span style="background-color:'.$config->ParameterArray['CriticalColor'].'; text-align:center" class="error colorbox border">*</span> - '.__("Above defined rack height").'</div>'."\n";
+
+	// Set up the classes for color coding based upon status
+	$dsList=DeviceStatus::getStatusList();
+
+	$head.="        <style type=\"text/css\">
 			.freespace {background-color: {$config->ParameterArray['FreeSpaceColor']};}\n";
 
-		// Only show reserved in the legend if the color is something other than white 
-		if($config->ParameterArray["ReservedColor"] != "#FFFFFF"){
-			$legend.="\t\t<div class=\"legenditem hide\"><span class=\"reserved colorbox border\"></span> - ".__("Reservation")."</div>\n";
-		}
+	if($config->ParameterArray["FreeSpaceColor"] != "#FFFFFF"){
+		$legend.='<div class="legenditem"><span class="freespace colorbox border"></span> - '.__("Free Space").'</div>'."\n";
+	}
 
-		if($config->ParameterArray["FreeSpaceColor"] != "#FFFFFF"){
-			$legend.='<div class="legenditem"><span class="freespace colorbox border"></span> - '.__("Free Space").'</div>'."\n";
+	foreach($dsList as $stat){
+		if($stat->ColorCode != "#FFFFFF"){
+			$stName=str_replace(' ','_',$stat->Status);
+
+			$head.="\t\t\t.$stName {background-color: {$stat->ColorCode} !important;}\n";
+			$legend.="\t\t<div class=\"legenditem hide\"><span class=\"$stName colorbox border\"></span> - $stat->Status</div>\n";
 		}
 	}
 
@@ -202,10 +207,6 @@ function renderUnassignedTemplateOwnership($noTemplFlag, $noOwnerFlag, $device) 
 	$body.=BuildCabinet($cab->CabinetID);
 	// Generate rear rack view if needed
 	$body.=($backside)?BuildCabinet($cab->CabinetID,'rear'):'';
-
-	$legend.='<div class="legenditem hide"><span style="background-color:'.$config->ParameterArray['CriticalColor'].'; text-align:center" class="error colorbox border">*</span> - '.__("Above defined rack height").'</div>'."\n";
-
-	$CenterofGravity=@round($totalMoment/$totalWeight);
 
 	$used=$cab->CabinetOccupancy($cab->CabinetID);
 	@$SpacePercent=($cab->CabinetHeight>0)?number_format($used/$cab->CabinetHeight*100,0):0;
@@ -288,7 +289,7 @@ $body.='<div id="infopanel">
 			</td>
 		</tr>
 		</table>
-		<p>'.__("Approximate Center of Gravity").': <span id="tippingpoint">'.$CenterofGravity.'</span></p>
+		<p>'.__("Approximate Center of Gravity").': <span id="tippingpoint"></span></p>
 	</fieldset>
 	<fieldset id="keylock">
 		<legend>'.__("Key/Lock Information").'</legend>

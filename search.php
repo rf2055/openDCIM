@@ -7,12 +7,15 @@
 	$searchTerm=preg_replace("/[[:cntrl:]]/","",$_REQUEST['search']);
 	//Remove any extra quotes that could get passed in from some funky js or something
 	$searchTerm=str_replace(array("'",'"'),"",$searchTerm);
+	# prevent script injection where we display the searchTerm in the title
+	# reported by Jacob Senn, Capital One
+	$searchTerm=sanitize($searchTerm);
 
 	$dc=new DataCenter();
 	$dcList=$dc->GetDCList();
 	
 	$dev=new Device();
-	$esx=new ESX();
+	$vm=new VM();
 	$cab=new Cabinet();
 	$pdu=new PowerDistribution();
 	$dept=new Department();
@@ -35,8 +38,8 @@
 		$dev->Label=$searchTerm;
 		$devList=$dev->SearchDevicebyLabel();
 		//Virtual machines will never be search via asset tags or serial numbers
-		$esx->vmName=$dev->Label;
-		$vmList=$esx->SearchByVMName();
+		$vm->vmName=$dev->Label;
+		$vmList=$vm->SearchByVMName();
 		$cab->Location=$searchTerm;
 		$cabList=$cab->LooseSearch(true);
 		$resultcount=count($devList)+count($cabList)+count($vmList);
@@ -51,8 +54,8 @@
 		}
 		$dev->Owner=$dept->DeptID;
 		$devList=$dev->GetDevicesbyOwner();
-		$esx->Owner=$dept->DeptID;
-		$vmList=$esx->GetVMListbyOwner();
+		$vm->Owner=$dept->DeptID;
+		$vmList=$vm->GetVMListbyOwner();
 		$cab->AssignedTo=$dept->DeptID;
 		$cabList=$cab->Search(true);
 		//PDUs have no ownership information so don't search them
@@ -91,10 +94,6 @@
 		}
 		$resultcount=count($devList);
 		$title=__("Device Model search results for")." &quot;$searchTerm&quot;";
-	}elseif($searchKey=="cattr"){
-		$devList=$dev->SearchByCustomAttribute($searchTerm);
-		$resultcount=count($devList);
-		$title=__("Custom attribute search results for")." &quot$searchTerm&quot;";
 	}elseif($searchKey=="notes"){
 		$dev->Notes=$searchTerm;
 		$devList=$dev->LooseSearch(true);
@@ -125,8 +124,12 @@
 		}
 		$devList=$dev->Search(true);
 		$resultcount=count($devList);
-	}else{
-		$devList=array();
+	}elseif($searchKey!=""){
+		// This should be catching custom attribute searches
+		$dev->$searchKey=$searchTerm;
+		$devList=$dev->Search(true, true );
+		$resultcount=count($devList);
+		$title=__("Search results for")." $searchKey = &quot;$searchTerm&quot;";
 	}
 
 	$x=0;
@@ -229,7 +232,7 @@
 
 	// Add Rack Names To Temp Cabinet Array
 	foreach($cabtemp as $key => $row){
-		if($key!=-1){
+		if($key>0){
 			$cab->Location='dc lookup error';
 			$cab->DataCenterID='0';
 			$cab->CabinetID=$key;
@@ -240,10 +243,14 @@
 			}else{
 				unset($cabtemp[$key]);
 			}
-		}else{
+		} elseif( $key=="-1" ) {
 			$cabtemp[$key]['name']="Storage Room";
 			$cabtemp[$key]['dc']=0;
 			$dctemp[0]='Storage Room'; // Add datacenter id to list for loop
+		} else {
+			$cabtemp[$key]['name']="Disposed";
+			$cabtemp[$key]['dc']=0;
+			$dctemp[0]="Disposed";
 		}
 	}
 	// Add Datacenter names to temp array

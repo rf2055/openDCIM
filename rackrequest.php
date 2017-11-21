@@ -1,10 +1,9 @@
 <?php
 	require_once( 'db.inc.php' );
 	require_once( 'facilities.inc.php' );
-	require_once( 'swiftmailer/swift_required.php' );
 
 	$subheader=__("Data Center Rack Request");
-	
+
 	if($config->ParameterArray["RackRequests"] != "enabled" || !$person->RackRequest){
 		// No soup for you.
 		header('Location: '.redirect());
@@ -19,6 +18,8 @@
 	$tmpContact=new People();
 	$formfix=$error='';	
 	$contactList=$person->GetUserList();
+	# defaulting to None
+	$validHypervisors=array( "None", "ESX", "ProxMox");
 
 	//We only need to worry about sending email in the event this is a new submission and no other time.
 	if(isset($_POST["action"])){
@@ -82,7 +83,7 @@
 			$req->SerialNo=$_POST['serialno'];
 			$req->MfgDate=$_POST['mfgdate'];
 			$req->AssetTag=$_POST['assettag'];
-			$req->ESX=$_POST['esx'];
+			$req->Hypervisor=$_POST['hypervisor'];
 			$req->Owner=$_POST['owner'];
 			$req->DeviceHeight=$_POST['deviceheight'];
 			$req->EthernetCount=$_POST['ethernetcount'];
@@ -96,6 +97,8 @@
 			$req->SpecialInstructions=$_POST['specialinstructions'];
 
 			$req->CreateRequest();
+			$contact->PersonID=$req->RequestorID;
+			$contact->GetPerson();
 
 			$htmlMessage.="<p>".sprintf(__('Your request for racking up the device labeled %1$s has been received.
 			The Network Operations Center will examine the request and contact you if more information is needed
@@ -122,7 +125,7 @@
 			$req->SerialNo=$_POST['serialno'];
 			$req->MfgDate=date('Y-m-d',strtotime($_POST["mfgdate"]));
 			$req->AssetTag=$_POST['assettag'];
-			$req->ESX=$_POST['esx'];
+			$req->Hypervisor=$_POST['hypervisor'];
 			$req->Owner=$_POST['owner'];
 			$req->DeviceHeight=$_POST['deviceheight'];
 			$req->EthernetCount=$_POST['ethernetcount'];
@@ -145,7 +148,7 @@
 				$dev->MfgDate=$req->MfgDate;
 				$dev->InstallDate=date('Y-m-d');
 				$dev->AssetTag=$req->AssetTag;
-				$dev->ESX=$req->ESX;
+				$dev->Hypervisor=$req->Hypervisor;
 				$dev->Owner=$req->Owner;
 				$dev->Cabinet=$_POST['CabinetID'];
 				$dev->Position=$_POST['position'];
@@ -237,7 +240,7 @@ print "			$('#deviceform').validationEngine({'custom_error_messages' : {
 				}	
 			});";
 ?>
-			$('#mfgdate').datepicker({});
+			$('#mfgdate').datepicker({dateFormat: "yy-mm-dd"});
 			$('#deviceclass').change( function(){
 				$.get('scripts/ajax_template.php?q='+$(this).val(), function(data) {
 					$('#deviceheight').val(data['Height']);
@@ -267,15 +270,15 @@ print "			$('#deviceform').validationEngine({'custom_error_messages' : {
 					rackhtmlright+='<div val='+ucount+' class="'+cssclass+'"></div>';
 				}
 				var rackhtml='<div class="table border positionselector"><div><div>'+rackhtmlleft+'</div><div>'+rackhtmlright+'</div></div></div>';
-				$('#positionselector').html(rackhtml);
+				$('#Positionselector').html(rackhtml);
 				setTimeout(function(){
 					var divwidth=$('.positionselector').width();
-					$('#positionselector').width(divwidth);
-					$('#CabinetID').focus(function(){$('#positionselector').css({'left': '-1000px'});});
-					$('#specialinstructions').focus(function(){$('#positionselector').css({'left': '-1000px'});});
-					$('#positionselector').css({'left':(($('#position').position().left)+(divwidth+20))});
-					$('#positionselector').mouseleave(function(){
-						$('#positionselector').css({'left': '-1000px'});
+					$('#Positionselector').width(divwidth);
+					$('#CabinetID').focus(function(){$('#Positionselector').css({'left': '-1000px'});});
+					$('#specialinstructions').focus(function(){$('#Positionselector').css({'left': '-1000px'});});
+					$('#Positionselector').css({'left':(($('#position').position().left)+(divwidth+20))});
+					$('#Positionselector').mouseleave(function(){
+						$('#Positionselector').css({'left': '-1000px'});
 					});
 					$('.positionselector > div > div + div > div').mouseover(function(){
 						$('.positionselector > div > div + div > div').each(function(){
@@ -305,7 +308,7 @@ print "			$('#deviceform').validationEngine({'custom_error_messages' : {
 									if(background=='green'){
 										$(this).click(function(){
 											$('#position').val($(this).attr('val'));
-											$('#positionselector').css({'left': '-1000px'});
+											$('#Positionselector').css({'left': '-1000px'});
 										});
 									}
 								}
@@ -334,7 +337,7 @@ echo '<div class="main">';
 if($error!=""){echo '<fieldset class="exception border error"><legend>Errors</legend>'.$error.'</fieldset>';}
 
 echo '<div class="center"><div>
-<div id="positionselector"></div>
+<div id="Positionselector"></div>
 <form name="deviceform" id="deviceform" action="',$_SERVER["SCRIPT_NAME"],$formfix,'" method="POST">
 	<input type="hidden" name="requestid" value="',$req->RequestID,'">';
 
@@ -375,17 +378,20 @@ echo '			</select>
 	</div>
 	<div>
 		<div><label for="mfgdate">',__("Manufacture Date"),'</label></div>
-		<div><input type="text" name="mfgdate" id="mfgdate" size="20" value="',date('m/d/Y',strtotime($req->MfgDate)),'"></div>
+		<div><input type="text" name="mfgdate" id="mfgdate" size="20" value="',date('Y-m-d',strtotime($req->MfgDate)),'"></div>
 	</div>
 	<div>
 		<div><label for="assettag">',__("Asset Tag"),'</label></div>
 		<div><input type="text" name="assettag" id="assettag" size="20" value="',$req->AssetTag,'"></div>
 	</div>
 	<div>
-		<div><label for="esx">',__("ESX Server?"),'</label></div>
-		<div><select name="esx" id="esx">
-			<option value="1"'.(($req->ESX)?' selected':'').'>',__("True"),'</option>
-			<option value="0"'.((!$req->ESX)?' selected':'').'>',__("False"),'</option>
+		<div><label for="Hypervisor">',__("Hypervisor?"),'</label></div>
+		<div><select name="hypervisor" id="hypervisor">';
+	foreach($validHypervisors as $h){
+		$selected=($req->Hypervisor==$h)?" selected":"";
+		print "\t\t\t<option value=\"$h\" $selected>$h</option>\n";
+	}
+echo '
 		</select></div>
 	</div>
 	<div>

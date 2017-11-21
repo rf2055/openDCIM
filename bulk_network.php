@@ -1,7 +1,6 @@
 <?php
 	require_once('db.inc.php');
 	require_once('facilities.inc.php');
-  require_once('PHPExcel/PHPExcel/IOFactory.php');
 
   if(!$person->BulkOperations){
     header('Location: '.redirect());
@@ -191,7 +190,7 @@
         $devPort->DeviceID = $val["DeviceID"];
       } else {
         $errors = true;
-        $content .= "<li>Source Device: $idField = " . $row["SourceDeviceID"] . " is not unique or not found.";
+        $content .= "<li>Source Device: $idField = " . $row["SourceDeviceID"] . " is not unique or not found.  Total = " . $val["TotalMatches"];
       }
 
       /*
@@ -210,7 +209,7 @@
         $devPort->ConnectedDeviceID = $val["DeviceID"];
       } else {
         $errors = true;
-        $content .= "<li>Target Device: $idField = " . $row["TargetDeviceID"] . " is not unique or not found.";
+        $content .= "<li>Target Device: $idField = " . $row["TargetDeviceID"] . " is not unique or not found.  Total = " . $val["TotalMatches"];
       }
 
       /*
@@ -230,7 +229,7 @@
         $devPort->Label = $val["Label"];
       } else {
         $errors = true;
-        $content .= "<li>Source Port: " . $row["SourcePort"] . " is not unique or not found.";
+        $content .= "<li>Source Port: " . $row["SourcePort"] . " is not unique or not found.  Total = " . $val["TotalMatches"];
       }
 
       /*
@@ -250,7 +249,7 @@
         $devPort->ConnectedPort = $val["PortNumber"];
       } else {
         $errors = true;
-        $content .= "<li>Target Port: " . $row["TargetDeviceID"] . "::" . $row["TargetPort"] . " is not unique or not found.";
+        $content .= "<li>Target Port: " . $row["TargetDeviceID"] . "::" . $row["TargetPort"] . " is not unique or not found.  Total = " . $val["TotalMatches"];
       }
 
       // Do not fail if the Color Code or Media Type are not defined for the site.

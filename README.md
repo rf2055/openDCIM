@@ -45,7 +45,7 @@ Follow the [guide](http://php.net/manual/en/book.mysql.php)
 Create the database and user
 ```shell
 	mysql -uroot -p -e "CREATE DATABASE dcim;CREATE USER 'dcim'@'localhost' IDENTIFIED BY 'dcim';GRANT ALL ON dcim.* TO 'dcim'@'localhost';"
-	mysql -udcim -pdcim < create.sql
+	mysql -udcim -pdcim dcim < create.sql
 ```
 
 Make db.inc.php from db.inc.php-dist
@@ -116,3 +116,9 @@ Contributions are always welcome, please follow these steps to submit your chang
 11. Click "Switch Branches" and select your branch (mynewfeature-patch)
 12. Click "Pull Request"
 13. Submit your pull request to the openDCIM Developers
+
+Translation - i18n
+---
+We do not accept any po files directly.  Please use the very simple, user friendly web interface at getlocalization.
+
+https://www.getlocalization.com/opendcim/

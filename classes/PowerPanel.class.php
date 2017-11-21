@@ -24,11 +24,13 @@
 */
 
 class PowerPanel {
-	/* PowerPanel:	PowerPanel(s) are the parents of PowerDistribution (power strips) and the children
-					each other.  Panels are arranged as either Odd/Even (odd numbers on the left,
-					even on the right) or Sequential (1 to N in a single column) numbering for the
-					purpose of building out a panel schedule.  If a PowerPanel has no ParentPanelID defined
-					then it is considered to be the PowerSource.  In other words, it's a reverse linked list.
+	/* PowerPanel:	PowerPanel(s) are the parents of PowerDistribution (power strips) and
+					the children each other.  Panels are arranged as either Odd/Even (odd
+					numbers on the left,even on the right), Busway, or Sequential (1 to N
+					in a single column) numbering for the purpose of building out a panel
+					schedule.  If a PowerPanel has no ParentPanelID defined	then it is
+					considered to be the PowerSource.  In other words, it's a reverse linked
+					list.
 	*/
 	
 	var $PanelID;
@@ -41,6 +43,11 @@ class PowerPanel {
 	var $ParentBreakerName;	// For switchgear, this usually won't be numbered, so we're accepting text
 	var $PanelIPAddress;
 	var $TemplateID;
+	var $MapDataCenterID;
+	var $MapX1;
+	var $MapX2;
+	var $MapY1;
+	var $MapY2;
 	
 	function prepare( $sql ) {
 		global $dbh;
@@ -73,11 +80,16 @@ class PowerPanel {
 		$this->NumberOfPoles=intval($this->NumberOfPoles);
 		$this->MainBreakerSize=intval($this->MainBreakerSize);
 		$this->PanelVoltage=intval($this->PanelVoltage);
-		$this->NumberScheme=($this->NumberScheme=='Odd/Even')?'Odd/Even':'Sequential';
+		$this->NumberScheme=in_array($this->NumberScheme, array( "Odd/Even", "Sequential", "Busway"))?$this->NumberScheme:"Sequential";
 		$this->ParentPanelID=intval($this->ParentPanelID);
 		$this->ParentBreakerName=sanitize($this->ParentBreakerName);
 		$this->PanelIPAddress=sanitize($this->PanelIPAddress);
 		$this->TemplateID=intval($this->TemplateID);
+		$this->MapDataCenterID=intval($this->MapDataCenterID);
+		$this->MapX1=intval($this->MapX1);
+		$this->MapX2=intval($this->MapX2);
+		$this->MapY1=intval($this->MapY1);
+		$this->MapY2=intval($this->MapY2);
 	}
 
 	function MakeDisplay(){
@@ -98,6 +110,11 @@ class PowerPanel {
 		$panel->ParentBreakerName=$row["ParentBreakerName"];
 		$panel->TemplateID=$row["TemplateID"];
 		$panel->PanelIPAddress=$row["PanelIPAddress"];
+		$panel->MapDataCenterID=$row["MapDataCenterID"];
+		$panel->MapX1=$row["MapX1"];
+		$panel->MapX2=$row["MapX2"];
+		$panel->MapY1=$row["MapY1"];
+		$panel->MapY2=$row["MapY2"];
 
 		$panel->MakeDisplay();
 
@@ -294,7 +311,9 @@ class PowerPanel {
 			PanelLabel=\"$this->PanelLabel\", NumberOfPoles=$this->NumberOfPoles, 
 			MainBreakerSize=$this->MainBreakerSize, PanelVoltage=$this->PanelVoltage, 
 			NumberScheme=\"$this->NumberScheme\", ParentPanelID=$this->ParentPanelID,
-			ParentBreakerName=\"$this->ParentBreakerName\", TemplateID=$this->TemplateID;";
+			ParentBreakerName=\"$this->ParentBreakerName\", TemplateID=$this->TemplateID,
+			MapDataCenterID=$this->MapDataCenterID, MapX1=$this->MapX1,
+			MapY1=$this->MapY1,MapY2=$this->MapY2;";
 
 		if(!$this->exec($sql)){
 			$info=$this->errorInfo();
@@ -349,7 +368,7 @@ class PowerPanel {
 			$scheduleItem->NoPrint=false;
 			$scheduleItem->Data=$currPdu;
 
-			if($poleId) {
+			if($this->NumberScheme!="Busway" && $poleId) {
 				$scheduleItem->Pole = $poleId;
 				$adder=1;
 				if($this->NumberScheme=="Odd/Even") {
@@ -389,9 +408,16 @@ class PowerPanel {
 						
 					}
 				}
-			} else {
+			} elseif ( $this->NumberScheme!="Busway" ) {
 				$scheduleItem->Pole=0;
 				$unscheduled[]=$scheduleItem;
+			} else {
+				$scheduleItem->Pole = $poleId;
+				$scheduleItem->Spanned = true;
+				$scheduleItem->SpanSize=1;
+				$nextItem = clone $scheduleItem;
+				$nextItem->Pole = $poleId;
+				$panelSchedule[$poleId][]=$nextItem;
 			}
 		}
 		// add first-level panels
@@ -522,6 +548,22 @@ class PowerPanel {
 		(class_exists('LogActions'))?LogActions::LogThis($this):'';
 		return true;
 	}
+
+	static function getPanelsForMap( $DataCenterID ) {
+		global $dbh;
+
+		$pnlList = array();
+
+		$st = $dbh->prepare( "select * from fac_PowerPanel where MapDataCenterID=:DataCenterID" );
+		$st->setFetchMode( PDO::FETCH_CLASS, "PowerPanel" );
+
+		$st->execute( array( ":DataCenterID"=>$DataCenterID ));
+		while ( $row = $st->fetch() ) {
+			$pnlList[$row->PanelID] = $row;
+		}
+
+		return $pnlList;
+	}
 		
 	function updatePanel(){
 		$this->MakeSafe();
@@ -534,7 +576,9 @@ class PowerPanel {
 			PanelLabel=\"$this->PanelLabel\", NumberOfPoles=$this->NumberOfPoles, 
 			MainBreakerSize=$this->MainBreakerSize, PanelVoltage=$this->PanelVoltage, 
 			NumberScheme=\"$this->NumberScheme\", ParentPanelID=$this->ParentPanelID,
-			ParentBreakerName=\"$this->ParentBreakerName\", TemplateID=$this->TemplateID
+			ParentBreakerName=\"$this->ParentBreakerName\", TemplateID=$this->TemplateID,
+			MapDataCenterID=$this->MapDataCenterID, MapX1=$this->MapX1, MapX2=$this->MapX2,
+			MapY1=$this->MapY1,MapY2=$this->MapY2
 			WHERE PanelID=$this->PanelID;";
 
 		if(!$this->query($sql)){

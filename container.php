@@ -63,8 +63,8 @@
 	$dir=scandir($path);
 	foreach($dir as $i => $f){
 		if(is_file($path.DIRECTORY_SEPARATOR.$f)){
-			$imageinfo=getimagesize($path.DIRECTORY_SEPARATOR.$f);
-			if(preg_match('/^image/i', $imageinfo['mime'])){
+			$mimeType=mime_content_type($path.DIRECTORY_SEPARATOR.$f);
+			if(preg_match('/^image/i', $mimeType)){
 				$imageselect.="<span>$f</span>\n";
 			}
 		}
@@ -89,12 +89,16 @@
   <script type="text/javascript" src="scripts/jquery-ui.min.js"></script>
   <script type="text/javascript" src="scripts/jquery.validationEngine-en.js"></script>
   <script type="text/javascript" src="scripts/jquery.validationEngine.js"></script>
+  <script type="text/javascript" src="scripts/common.js"></script>
 
   <script type="text/javascript">
 	$(document).ready(function() {
 		$('#containerid').change(function(e){
 			location.href='container.php?containerid='+this.value;
 		});
+
+		$("#containerid").combobox();
+		$("#parentid").combobox();
 		$('#datacenterform').validationEngine({});
 		$('#drawingfilename').click(function(){
 			$("#imageselection").dialog({
@@ -157,7 +161,7 @@ print '		dialog.find("span + span").html("'.__("This container will be deleted a
 <?php echo '				',__("Yes"),': function(){'; ?>
 						$(this).dialog("destroy");
 						form.append('<input type="hidden" name="'+btn.attr("name")+'" value="'+btn.val()+'">');
-						form.submit();
+							form.submit();
 					},
 <?php echo '				',__("No"),': function(){'; ?>
 						$(this).dialog("destroy");

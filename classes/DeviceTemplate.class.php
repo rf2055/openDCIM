@@ -270,18 +270,15 @@ class DeviceTemplate {
 		$this->MakeSafe();
 
 		// This will store all our extended sql
-		$sqlextend="";
-		function findit($prop,$val,&$sql,$loose){
-			$method=($loose)?" LIKE \"%$val%\"":"=\"$val\"";
-			$sql.=" AND a.$prop$method";
-		}
+		$sqlextend="WHERE a.ManufacturerID=b.ManufacturerID";
+
 		foreach($o as $prop => $val){
-			findit($prop,$this->$prop,$sqlextend,$loose);
+			extendsql('a.'.$prop,$this->$prop,$sqlextend,$loose);
 		}
 
 		// The join is purely to sort the templates by the manufacturer's name
-		$sql="SELECT a.* FROM fac_DeviceTemplate a, fac_Manufacturer b WHERE
-			a.ManufacturerID=b.ManufacturerID$sqlextend ORDER BY Name ASC, Model ASC;";
+		$sql="SELECT a.* FROM fac_DeviceTemplate a, fac_Manufacturer b 
+			$sqlextend ORDER BY Name ASC, Model ASC;";
 
 		$templateList=array();
 
@@ -339,13 +336,19 @@ class DeviceTemplate {
 		}
 	}
   
-	function GetTemplateList(){
+	static function GetTemplateList( $indexed=false ){
+		global $dbh;
+
 		$sql="SELECT * FROM fac_DeviceTemplate a, fac_Manufacturer b WHERE 
 			a.ManufacturerID=b.ManufacturerID ORDER BY Name ASC, Model ASC;";
 
 		$templateList=array();
-		foreach($this->query($sql) as $row){
-			$templateList[]=DeviceTemplate::RowToObject($row);
+		foreach($dbh->query($sql) as $row){
+			if ( $indexed ) {
+				$templateList[$row["TemplateID"]]=DeviceTemplate::RowToObject($row);
+			} else {
+				$templateList[]=DeviceTemplate::RowToObject($row);
+			}
 		}
 
 		return $templateList;
@@ -542,7 +545,7 @@ xsi:noNamespaceSchemaLocation="openDCIMdevicetemplate.xsd">
 		<Label>'.$tport->Label.'</Label>
 		<PortMedia>'.$mt->MediaType.'</PortMedia>
 		<PortColor>'.$cc->Name.'</PortColor>
-		<PortNotes>'.$tport->PortNotes.'</PortNotes>
+		<Notes>'.$tport->Notes.'</Notes>
 	</PortReg>';
 		}
 		//Pictures
@@ -689,7 +692,7 @@ xsi:noNamespaceSchemaLocation="openDCIMdevicetemplate.xsd">
 			$tport->Label=$xmlport->Label;
 			$tport->MediaID=$mt->MediaID; 
 			$tport->ColorID=$cc->ColorID;
-			$tport->PortNotes=$xmlport->PortNotes;
+			$tport->Notes=$xmlport->Notes;
 			if ($tport->PortNumber<=$this->NumPorts){
 				if(!$tport->CreatePort()){
 					$result["status"]=__("Import Warning");
@@ -717,9 +720,11 @@ xsi:noNamespaceSchemaLocation="openDCIMdevicetemplate.xsd">
 		$this->MakeSafe();
 
 		$tdca = array();
-		$sql = "SELECT TemplateID, AttributeID, Required, Value
-			FROM fac_DeviceTemplateCustomValue
-			WHERE TemplateID=$this->TemplateID;";
+		//Table join to make it where we can half ass sort the custom attributes based on the label data
+		$sql="SELECT a.Label, v.TemplateID, v.AttributeID, v.Required, v.Value FROM 
+			fac_DeviceTemplateCustomValue v, fac_DeviceCustomAttribute a WHERE 
+			a.AttributeID=v.AttributeID AND TemplateID=$this->TemplateID ORDER BY Label, 
+			AttributeID;";
 		foreach($this->query($sql) as $tdcrow) {
 			$tdca[$tdcrow["AttributeID"]]["value"]=$tdcrow["Value"];
 			$tdca[$tdcrow["AttributeID"]]["required"]=$tdcrow["Required"];
@@ -767,8 +772,8 @@ xsi:noNamespaceSchemaLocation="openDCIMdevicetemplate.xsd">
 			$dir=scandir($path);
 			foreach($dir as $i => $f){
 				if(is_file($path.DIRECTORY_SEPARATOR.$f) && ($f!='.' && $f!='..' && $f!='P_ERROR.png')){
-					@$imageinfo=getimagesize($path.DIRECTORY_SEPARATOR.$f);
-					if(preg_match('/^image/i', $imageinfo['mime'])){
+					$mimeType=mime_content_type($path.DIRECTORY_SEPARATOR.$f);
+					if(preg_match('/^image/i', $mimeType)){
 						$array[]=$f;
 					}
 				}

@@ -387,8 +387,13 @@ class DataCenter {
 				$RealPowerYellow=intval($this->dcconfig->ParameterArray["PowerYellow"]);
 				
 				// get image file attributes and type
-				list($width, $height, $type, $attr)=getimagesize($mapfile);
-
+				if(mime_content_type($mapfile)=='image/svg+xml'){
+					$svgfile = simplexml_load_file($mapfile);
+					$width = substr($svgfile['width'],0,4);
+					$height = substr($svgfile['height'],0,4);
+				}else{
+					list($width, $height, $type, $attr)=getimagesize($mapfile);
+				}
 				$cdus=array();
 					
 				$sql = "select c.CabinetID, P.RealPower, P.BreakerSize, P.InputAmperage*PP.PanelVoltage as VoltAmp from 
@@ -416,7 +421,7 @@ class DataCenter {
 					$maxDraw*=0.8;
 
 					// Only keep the highest percentage of any single CDU in a cabinet
-					if ( $rp > 0 ) {
+					if ( $maxDraw > 0 ) {
 						$pp=intval($rp / $maxDraw * 100);
 					} else {
 						$pp = 0;
@@ -531,30 +536,32 @@ class DataCenter {
 			DataCenterID=$this->DataCenterID;";
 		$dcStats["TotalU"]=($test=$this->query($sql)->fetchColumn())?$test:0;
 
+		// Count the U used up by devices that are (a) not chassis cards; (b) in a cabinet in the data center; (c) not a server or array; and (d) not in the Storage Room (Cabinet=-1)
 		$sql="SELECT SUM(a.Height) as TotalU FROM fac_Device a,fac_Cabinet b WHERE 
 			a.Cabinet=b.CabinetID AND b.DataCenterID=$this->DataCenterID AND ParentDevice=0 AND
-			a.DeviceType NOT IN ('Server','Storage Array');";
+			a.DeviceType NOT IN ('Server','Storage Array') and a.Cabinet>0;";
 		$dcStats["Infrastructure"]=($test=$this->query($sql)->fetchColumn())?$test:0;
  
 		$sql="SELECT SUM(a.Height) as TotalU FROM fac_Device a,fac_Cabinet b WHERE 
 			a.Cabinet=b.CabinetID AND b.DataCenterID=$this->DataCenterID AND ParentDevice=0 AND
-			a.Reservation=false AND a.DeviceType IN ('Server', 'Storage Array');";
+			a.Status not in ('Reserved', 'Salvage') AND a.DeviceType IN ('Server', 'Storage Array') and a.Cabinet>0;";
 		$dcStats["Occupied"]=($test=$this->query($sql)->fetchColumn())?$test:0;
 
+		// There should never be a case where a device marked as reserved ends up in the Storage Room, but S.U.T. #44
 		$sql="SELECT SUM(a.Height) FROM fac_Device a,fac_Cabinet b WHERE ParentDevice=0 AND
-			a.Cabinet=b.CabinetID AND a.Reservation=true AND b.DataCenterID=$this->DataCenterID;";
+			a.Cabinet=b.CabinetID AND a.Status='Reserved' AND b.DataCenterID=$this->DataCenterID and a.Cabinet>0;";
 		$dcStats["Allocated"]=($test=$this->query($sql)->fetchColumn())?$test:0;
 		
         $dcStats["Available"]=$dcStats["TotalU"] - $dcStats["Occupied"] - $dcStats["Infrastructure"] - $dcStats["Allocated"];
 
 		// Perform two queries - one is for the wattage overrides (where NominalWatts > 0) and one for the template (default) values
 		$sql="SELECT SUM(NominalWatts) as TotalWatts FROM fac_Device a,fac_Cabinet b WHERE 
-			a.Cabinet=b.CabinetID AND a.NominalWatts>0 AND 
+			a.Cabinet=b.CabinetID AND a.NominalWatts>0 AND a.Cabinet>0 AND
 			b.DataCenterID=$this->DataCenterID;";
 		$dcStats["ComputedWatts"]=($test=$this->query($sql)->fetchColumn())?$test:0;
 		
 		$sql="SELECT SUM(c.Wattage) as TotalWatts FROM fac_Device a, fac_Cabinet b, 
-			fac_DeviceTemplate c WHERE a.Cabinet=b.CabinetID AND 
+			fac_DeviceTemplate c WHERE a.Cabinet=b.CabinetID AND a.Cabinet>0 AND
 			a.TemplateID=c.TemplateID AND a.NominalWatts=0 AND 
 			b.DataCenterID=$this->DataCenterID;";
 		$dcStats["ComputedWatts"]+=($test=$this->query($sql)->fetchColumn())?$test:0;

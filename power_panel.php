@@ -15,6 +15,7 @@
 	$cab=new Cabinet();
 	$tmpl = new CDUTemplate();
 	$tmpList = $tmpl->GetTemplateList();
+	$dcList = DataCenter::GetDCList();
 	$script="";
 
 	// AJAX
@@ -33,9 +34,21 @@
 	// Set a default panel voltage based upon the configuration screen
 	$panel->PanelVoltage=$config->ParameterArray["DefaultPanelVoltage"];
   
-	if(isset($_POST["action"])&&(($_POST["action"]=="Create")||($_POST["action"]=="Update"))){
+	if(isset($_POST["action"])&&(($_POST["action"]=="Create")||($_POST["action"]=="Update")||($_POST["action"]=="Map"))){
 		foreach($panel as $prop => $val){
 			$panel->$prop=trim($_POST[$prop]);
+		}
+		// Coordinates aren't displayed on this page and the loop above is looking 
+		// for every attribute on the panel model.  This will load the original object 
+		// and pull over the coordinates so they don't get wiped. 
+		if($_POST["action"]!="Create"){
+			$pan=new PowerPanel();
+			$pan->PanelID=$panel->PanelID;
+			$pan->getPanel();
+			$panel->MapX1=$pan->MapX1;
+			$panel->MapX2=$pan->MapX2;
+			$panel->MapY1=$pan->MapY1;
+			$panel->MapY2=$pan->MapY2;
 		}
 		
 		if($_POST["action"]=="Create"){
@@ -44,6 +57,9 @@
 			}
 		} else {
 			$panel->updatePanel();
+			if($_POST["action"]=="Map" && $panel->MapDataCenterID>0){
+				header('Location: '.redirect("mapmaker.php?panelid=$panel->PanelID"));
+			}
 		}
 	}
 
@@ -256,12 +272,17 @@ echo '	</select>
 
 // This is messy but since we are actually storing this value in the db and we use it elsewhere this
 // worked out best
-	if($panel->NumberScheme=="Odd/Even"){$selected=" selected";}else{$selected="";}
-	print "<option value=\"Odd/Even\"$selected>".__("Odd/Even")."</option>\n";
+    $panelType = array( "Odd/Even", "Sequential", "Busway" );
 
-	if($panel->NumberScheme=="Sequential"){$selected=" selected";}else{$selected="";}
-	print "<option value=\"Sequential\"$selected>".__("Sequential")."</option>\n";
+   	foreach ( $panelType as $pType ) {
+   		if ( $pType == $panel->NumberScheme ) {
+   			$pTypeSelect = "SELECTED";
+   		} else {
+   			$pTypeSelect = "";
+   		}
 
+   		print "<option value=\"$pType\" $pTypeSelect>$pType</option>\n";
+ 	}
 ?>
    </select>
    </div>
@@ -299,16 +320,30 @@ echo '	</select></div>
 				$selected=($panel->TemplateID==$tmp->TemplateID)?' selected':'';
 				print "\n\t\t\t<option value=$tmp->TemplateID$selected>$tmp->Model</option>";
 			}
-?>
+echo '
 
 		</select>
 	</div>
 </div>
-<div class="caption">
-<?php
+<div>
+	<div><label for="MapDataCenterID">',__("Data Center (for Mapping)"),'</label></div>
+	<div>
+		<select name="MapDataCenterID" id="MapDataCenterID">
+			<option value=0>Do not map</option>';
+
+			foreach( $dcList as $dc) {
+				$selected=($panel->MapDataCenterID==$dc->DataCenterID)?'selected':'';
+				print "\n\t\t\t<option value=$dc->DataCenterID $selected>$dc->Name</option>";
+			}
+echo '		</select>
+	</div>
+</div>
+<div class="caption">';
+
 	if($panel->PanelID >0){
 		echo '	<button type="submit" name="action" value="Update">',__("Update"),'</button>
-	<button type="button" name="action" value="Delete">',__("Delete"),'</button>';
+	<button type="button" name="action" value="Delete">',__("Delete"),'</button>
+	<button type="submit" name="action" value="Map">',__("Map Coordinates"),'</button>';
 	}else{
 		echo '	<button type="submit" name="action" value="Create">',__("Create"),'</button>';
 	}
@@ -344,11 +379,19 @@ echo '	</select></div>
 				}
 			}
 			print "</table>";
-		} else {
+		} elseif ($panel->NumberScheme=="Sequential") {
 			print "<table>";
 			for($count=1; $count<=$panel->NumberOfPoles; $count++) {
 				print "<tr><td class=\"polenumber\">$count</td>";
 				print $panel->getPanelScheduleLabelHtml($panelSchedule["panelSchedule"], $count, "panelleft", false);
+				print "</tr>";
+			}
+			print "</table>";
+		} else {
+			print "<table>";
+			foreach( $panelSchedule["panelSchedule"] as $panKey=>$panItem ) {
+				print "<tr><td class=\"polenumber\">$panKey</td>";
+				print $panel->getPanelScheduleLabelHtml($panelSchedule["panelSchedule"], $panKey, "panelleft", false );
 				print "</tr>";
 			}
 			print "</table>";
