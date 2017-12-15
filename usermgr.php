@@ -2,9 +2,9 @@
 	require_once('db.inc.php');
 	require_once('facilities.inc.php');
 
-	$subversion=__("Data Center Contact Detail");
+	$subheader=__("Data Center Contact Detail");
 
-	if(!$person->SiteAdmin){
+	if(!$person->SiteAdmin || !$person->ContactAdmin){
 		header('Location: '.redirect());
 		exit;
 	}
