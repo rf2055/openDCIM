@@ -82,6 +82,8 @@ class Container {
 			$this->ContainerID = $dbh->lastInsertID();
 		}
 
+		updateNavTreeHTML();
+				
 		(class_exists('LogActions'))?LogActions::LogThis($this):'';
 		return $this->ContainerID;
 	}
@@ -98,8 +100,12 @@ class Container {
 			WHERE ContainerID=$this->ContainerID;";
 		
 		if(!$this->query($sql)){
+			updateNavTreeHTML();
+				
 			return false;
 		}else{
+			updateNavTreeHTML();			
+
 			(class_exists('LogActions'))?LogActions::LogThis($this,$oldcontainer):'';
 			return true;
 		}
@@ -130,6 +136,8 @@ class Container {
 			return false;
 		}
 
+		updateNavTreeHTML();
+				
 		(class_exists('LogActions'))?LogActions::LogThis($this):'';
 		return;
 	}
@@ -263,12 +271,13 @@ class Container {
     }
 
 	function MakeContainerImage(){
+		global $config;
 		$mapHTML="";
 		$mapfile="";
 		$tam=50;
 	 
 		if ( strlen($this->DrawingFileName) > 0 ) {
-			$mapfile = "drawings/" . $this->DrawingFileName;
+			$mapfile = $config->ParameterArray['drawingpath'] . $this->DrawingFileName;
 		}
 	   
 		if ( file_exists( $mapfile ) ) {
@@ -330,6 +339,7 @@ class Container {
 	}
 
 	function MakeContainerMiniImage($tipo="",$id=0) {
+		global $config;
 		$mapHTML = "";
 		$mapfile="";
 		$tam=50;
@@ -338,7 +348,7 @@ class Container {
 		$yo_ok=false;
 	 
 		if ( strlen($this->DrawingFileName) > 0 ) {
-			$mapfile = "drawings/" . $this->DrawingFileName;
+			$mapfile = $config->ParameterArray['drawingpath'] . $this->DrawingFileName;
 		}
 	   
 		if ( file_exists( $mapfile ) ) {

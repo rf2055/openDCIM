@@ -274,7 +274,7 @@ $body.='<div id="infopanel">
 			<td>'.__("Computed Watts").'
 				<div class="meter-wrap">
 					<div class="meter-value" style="background-color: '.$PowerColor.'; width: '.$PowerPercent.'%;">
-						<div class="meter-text">'; $body.=sprintf("%d kW / %d kW",round($totalWatts/1000),$cab->MaxKW);$body.='</div>
+						<div class="meter-text">'; $body.=sprintf("%.2f kW / %d kW",$totalWatts/1000,$cab->MaxKW);$body.='</div>
 					</div>
 				</div>
 			</td>
@@ -283,7 +283,7 @@ $body.='<div id="infopanel">
 			<td>'.__("Measured Watts").'
 				<div class="meter-wrap">
 					<div class="meter-value" style="background-color: '.$MeasuredColor.'; width: '.$MeasuredPercent.'%;">
-						<div class="meter-text">'; $body.=sprintf("%d kW / %d kW",round($measuredWatts/1000),$cab->MaxKW);$body.='</div>
+						<div class="meter-text">'; $body.=sprintf("%.2f kW / %d kW",$measuredWatts/1000,$cab->MaxKW);$body.='</div>
 					</div>
 				</div>
 			</td>
@@ -435,7 +435,7 @@ echo $head,'  <script type="text/javascript" src="scripts/jquery.min.js"></scrip
   <script type="text/javascript" src="scripts/jquery-ui.min.js"></script>
   <script type="text/javascript" src="scripts/jquery.cookie.js"></script>
   <script type="text/javascript" src="scripts/jquery-json.min.js"></script>
-  <script type="text/javascript" src="scripts/common.js?v',filemtime('scripts/common.js'),'>"></script>
+  <script type="text/javascript" src="scripts/common.js?v',filemtime('scripts/common.js'),'"></script>
   <script type="text/javascript" src="scripts/masonry.pkgd.min.js"></script>
   <script type="text/javascript">
 	window.weight=',$totalWeight,';
@@ -646,6 +646,22 @@ if($config->ParameterArray["CDUToolTips"]=='enabled'){
 ?>
 </div> <!-- END div#centeriehack -->
 </div></div>
+
+<?php 
+if($cab->ZoneID){
+	$zone=new Zone();
+	$zone->ZoneID=$cab->ZoneID;
+	$zone->GetZone();
+	echo '<a href="zone_stats.php?zone=',$zone->ZoneID,'">[ ',sprintf(__("Return to Zone %s"),$zone->Description),' ]</a><br>';
+}
+if ($cab->CabRowID) {
+	$cabrow=new CabRow();
+	$cabrow->CabRowID=$cab->CabRowID;
+	$cabrow->GetCabRow();
+	echo '<a href="rowview.php?row=',$cabrow->CabRowID,'">[ ',sprintf(__("Return to Row %s"),$cabrow->Name),' ]</a><br>';
+}
+?>
+
 <?php echo '<a href="dc_stats.php?dc=',$dcID,'">[ ',sprintf(__("Return to %s"),$dc->Name),' ]</a>
 <!-- hiding modal dialogs here so they can be translated easily -->
 <div class="hide">
@@ -669,6 +685,13 @@ if($config->ParameterArray["CDUToolTips"]=='enabled'){
 	</div>
 </div>'; ?>
 </div>  <!-- END div.main -->
+
+<?php
+if($person->CanWrite($cab->AssignedTo) || $person->SiteAdmin) {
+    echo '<div><input type="hidden" name="cabinetdraggable" id="cabinetdraggable" value="yes"></div>';
+}
+?>
+
 
 <div class="clear"></div>
 </div>
@@ -706,9 +729,6 @@ if($config->ParameterArray["CDUToolTips"]=='enabled'){
 			$('#centeriehack > .cabinet:first-child').remove();
 			$('.cabinet').width(width*2).css('max-width',width*2+'px');
 		}
-		// Add controls to the rack
-		cabinetimagecontrols();
-
 		// Damn translators not using abreviations
 		// This will lock the cabinet into the correct size
 		$('.cabinet #cabid').parent('tr').next('tr').find('.cabpos').css('padding','0px').wrapInner($('<div>').css({'overflow':'hidden','width':'30px'}));

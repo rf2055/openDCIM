@@ -18,6 +18,35 @@
   *
   **/
 
+//
+//     URL:    /api/v1/cabinet/:cabinetid
+//     Method: DELETE
+//     Params: cabinetid (passed in URL)
+//     Returns:  true/false on update operation
+//
+
+$app->delete( '/cabinet/:cabinetid', function( $cabinetid ) use($person) {
+	if ( ! $person->SiteAdmin ) {
+			$r['error'] = true;
+			$r['errorcode'] = 401;
+			$r['message'] = __("Access Denied");
+	} else {
+			$cab=new Cabinet();
+			$cab->CabinetID=$cabinetid;
+
+			if(!$cab->DeleteCabinet()){
+					$r['error']=true;
+					$r['errorcode']=404;
+					$r['message']=__("Failed to delete cabinet with CabinetID")." $cab->CabinetID";
+			}else{
+					$r['error']=false;
+					$r['errorcode']=200;
+			}
+	}
+
+	echoResponse( $r );
+});
+
 
 //
 //	URL:	/api/v1/powerport/:deviceid
@@ -28,7 +57,6 @@
 //	Returns:  true/false on update operation
 //
 
-// $app->delete( '/powerport/{deviceid}', function( Request $request, Response $response, $args ) use ($person) {
 $app->delete( '/powerport/:deviceid', function( $deviceid ) use ($app) {
 	$pp=new PowerPorts();
 	$pp->DeviceID=$deviceid;
@@ -118,7 +146,7 @@ $app->delete( '/colorcode/:colorid', function( $colorid ) use($person) {
 
 $app->delete( '/device/:deviceid', function( $deviceid ) {
 	$dev=new Device();
-	$dev->DeviceID=$args['deviceid'];
+	$dev->DeviceID=$deviceid;
 	
 	if(!$dev->GetDevice()){
 		$r['error']=true;
@@ -168,6 +196,137 @@ $app->delete( '/devicestatus/:statusid', function($statusid) use ($person) {
 			$r['errorcode']=200;
 			$r['message']=__("Status removed successfully.");
 			$r['devicestatus'][$ds->StatusID]=$ds;
+		}
+	}
+
+	echoResponse( $r );
+});
+
+//	URL:	/api/v1/sensorreadings/:sensorid
+//	Method:	DELETE
+//	Params:
+//		Required: sensorid
+//	Returns: true/false on delete operation
+$app->delete( '/sensorreadings/:sensorid', function($sensorid) use ($person) {
+	if ( ! $person->SiteAdmin ) {
+		$r['error'] = true;
+		$r['errorcode'] = 401;
+		$r['message'] = __("Access Denied");
+	} else {
+		$sr=new SensorReadings();
+		$sr->SensorID=$sensorid;
+		
+		if(!$sr->DeleteSensorReadings()){
+			$r['error']=true;
+			$r['errorcode']=400;
+			$r['message']=__("Error removing sensor readings for SensorID ").$sensorid;
+		}else{
+			$r['error']=false;
+			$r['errorcode']=200;
+		}
+	}
+
+	echoResponse( $r );
+});
+
+//	URL:	/api/v1/pdustats/:pduid
+//	Method:	DELETE
+//	Params:
+//		Required:	pduid
+//	Returns: true/false on delete operation
+$app->delete( '/pdustats/:pduid', function($pduid) use ($person) {
+	if ( ! $person->SiteAdmin ) {
+		$r['error'] = true;
+		$r['errorcode'] = 401;
+		$r['message'] = __("Access Denied");
+	} else {
+		$ps=new PDUStats();
+		$ps->PDUID=$pduid;
+		if(!$ps->DeletePDUStats()){
+			$r['error']=true;
+			$r['errorcode']=400;
+			$r['message']=__("Error removing pdu stats for PDUID ").$pduid;
+		}else{
+			$r['error']=false;
+			$r['errorcode']=200;
+		}
+	}
+
+	echoResponse( $r );
+});
+
+//	URL:	/api/v1/vminventory/:vmindex
+//	Method:	DELETE
+//	Params:
+//		Required:	vmindex
+//	Returns: true/false on delete operation
+$app->delete( '/vminventory/:vmindex', function($vmindex) use ($person) {
+	if ( ! $person->SiteAdmin ) {
+		$r['error'] = true;
+		$r['errorcode'] = 401;
+		$r['message'] = __("Access Denied");
+	} else {
+		$vm=new VM();
+		$vm->VMIndex=$vmindex;
+		if(!$vm->DeleteVM()){
+			$r['error']=true;
+			$r['errorcode']=400;
+			$r['message']=__("Error removing VM from VMInventory.");
+		}else{
+			$r['error']=false;
+			$r['errorcode']=200;
+		}
+	}
+
+	echoResponse( $r );
+});
+
+//	URL:	/api/v1/vminventory/expirevms/:days
+//	Method:	DELETE
+//	Params:
+//		Required:	days
+//	Returns: true
+$app->delete( '/vminventory/expirevms/:days', function($days) use ($person) {
+	if ( ! $person->SiteAdmin ) {
+		$r['error'] = true;
+		$r['errorcode'] = 401;
+		$r['message'] = __("Access Denied");
+	} else {
+		if (!intval($days)) {
+			$r['error'] = true;
+			$r['errorcode'] = 401;
+			$r['message'] = __("Invalid parameter (days)");
+		} else {
+			$vm=new VM();
+			$vm->ExpireVMs($days);
+			$r['error']=false;
+			$r['errorcode']=200;
+		}
+	}
+
+	echoResponse( $r );
+});
+
+//	URL:	/api/v1/powerpanel/:panelid
+//	Method:	DELETE
+//	Params:
+//		Required:	panelid
+//	Returns: true/false on delete operation
+$app->delete( '/powerpanel/:panelid', function($panelid) use ($person) {
+	if ( ! $person->SiteAdmin ) {
+		$r['error'] = true;
+		$r['errorcode'] = 401;
+		$r['message'] = __("Access Denied");
+	} else {
+		$pp=new PowerPanel();
+		$pp->PanelID=$panelid;
+		if(!$pp->deletePanel()){
+			$r['error']=true;
+			$r['errorcode']=400;
+			$r['message']=__("Error removing Powerpanel with PanelID ").$panelid;
+		}else{
+			$r['error']=false;
+			$r['errorcode']=200;
 		}
 	}
 

@@ -78,6 +78,38 @@ echo '<div class="main">
 </fieldset>
 </div>';
 
+if ( file_exists( $config->ParameterArray["reportspath"] . "localreports.json" ) ) {
+	// There's a defined file for local reports, so read and display.
+	
+	echo '
+<div>
+<fieldset>
+<legend>',__("Local Reports"),'</legend>';
+
+	$reportRaw = file_get_contents( $config->ParameterArray["reportspath"] . "localreports.json" );
+	$reportJSON = json_decode( $reportRaw, true );
+
+	$array = json_decode($reportRaw,true);
+
+	foreach($array as $k=>$val) {
+		// Look for a parameter and trim it off in the file_exists check
+                if ( strpos( $val["FileName"], "?" ) > 0 ) {
+                        $checkFile = substr( $val["FileName"], 0, strpos( $val["FileName"], "?" ));
+                } else {
+                        $checkFile = $val["FileName"];
+                }
+
+		if ( isset( $val["DisplayName"] ) && isset( $val["FileName"] ) && file_exists( $config->ParameterArray["reportspath"] . $checkFile ) ) {
+			echo '		<a href="',$config->ParameterArray["reportspath"] . $val["FileName"],'">',$val["DisplayName"],'</a>';
+		}
+	}
+	
+	echo '
+</fieldset>
+</div>';
+
+}
+
 ?>
 
 

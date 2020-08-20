@@ -35,6 +35,7 @@ class Cabinet {
 	var $Location;
 	var $LocationSortable;
 	var $AssignedTo;
+	var $ShowCabinetLabel;
 	var $ZoneID;
 	var $CabRowID;      //JMGA: Row of this cabinet
 	var $CabinetHeight;
@@ -86,6 +87,7 @@ class Cabinet {
 		 * Generic function that will take any row returned from the fac_Cabinet
 		 * table and convert it to an object for use in array or other
 		 */
+		global $config;
 		$cab=new Cabinet();
 		$cab->CabinetID=$dbRow["CabinetID"];
 		$cab->DataCenterID=$dbRow["DataCenterID"];
@@ -108,6 +110,22 @@ class Cabinet {
 		$cab->Notes=$dbRow["Notes"];
 		$cab->U1Position=$dbRow["U1Position"];
 
+		switch($config->ParameterArray["AssignCabinetLabels"]){
+			case "OwnerName":
+				$dept=new Department($cab->AssignedTo);
+				$dept->GetDeptByID();
+				$cab->ShowCabinetLabel=$dept->Name;
+				break;
+			case "KeyLockInformation":
+				$cab->ShowCabinetLabel=$cab->Keylock;
+				break;
+			case "ModelNo":
+				$cab->ShowCabinetLabel=$cab->Model;
+				break;
+			default:
+				$cab->ShowCabinetLabel=$cab->Location;
+		}
+
 		if($filterrights){
 			$cab->FilterRights();
 		} else {
@@ -119,7 +137,13 @@ class Cabinet {
 			$dc=$_SESSION['datacenters'][$cab->DataCenterID];
 			if($dc->U1Position=="Default"){
 				global $config;
-				$cab->U1Position=$config->ParameterArray["U1Position"];
+				if($config->ParameterArray["U1Position"]!=""){
+					$cab->U1Position=$config->ParameterArray["U1Position"];
+				}else{
+					# If for some crazy reason the config value for the U1 position isn't set
+					# then just assume bottom
+					$cab->U1Position="Bottom";
+				}
 			}else{
 				$cab->U1Position=$dc->U1Position;
 			}
@@ -146,7 +170,7 @@ class Cabinet {
 		}
 	}
 
-	function CreateCabinet(){
+	function CreateCabinet($deferTreeRebuild=false){
 		global $dbh;
 		
 		$this->MakeSafe();
@@ -170,7 +194,11 @@ class Cabinet {
 		}else{
 			$this->CabinetID=$dbh->lastInsertID();
 		}
-		
+
+		if ( ! $deferTreeRebuild ) {
+			updateNavTreeHTML();
+		}
+				
 		(class_exists('LogActions'))?LogActions::LogThis($this):'';
 		return $this->CabinetID;
 	}
@@ -202,6 +230,8 @@ class Cabinet {
 			return false;
 		}
 
+		updateNavTreeHTML();
+				
 		(class_exists('LogActions'))?LogActions::LogThis($this,$old):'';
 		return true;
 	}
@@ -275,12 +305,13 @@ class Cabinet {
 
 	function GetCabinetsByDept(){
 		global $dbh;
+		global $config;
 
 		$this->MakeSafe();
 
 		$cabinetList = array();
 
-		$sql = "select * from fac_Cabinet where AssignedTo='" . $this->AssignedTo . "'";
+		$sql = "select * from fac_Cabinet where AssignedTo='" . $this->DeptID . "'";
 		foreach( $dbh->query($sql) as $cabinetRow){
 			$filter = $config->ParameterArray["FilterCabinetList"] == 'Enabled' ? true:false;
 			$cabinetList[]=Cabinet::RowToObject($cabinetRow, $filter);		
@@ -481,6 +512,8 @@ class Cabinet {
 			return false;
 		}
 	
+		updateNavTreeHTML();
+				
 		(class_exists('LogActions'))?LogActions::LogThis($this):'';
 		return true;
 	}
@@ -601,6 +634,17 @@ class Cabinet {
 		}
 
 		return $cabstats;
+	}
+	function getPictures(){
+		global $dbh;
+		$sql="SELECT * FROM fac_DeviceCache WHERE DeviceID IN (SELECT DeviceID FROM 
+			fac_Device WHERE Cabinet=$this->CabinetID AND ParentDevice=0);";
+		$devarray=array();
+		foreach($dbh->query($sql) as $row){
+			$devarray[$row['DeviceID']]['Front']=html_entity_decode($row['Front']);
+			$devarray[$row['DeviceID']]['Rear']=html_entity_decode($row['Rear']);
+		}
+		return $devarray;
 	}
 }
 ?>

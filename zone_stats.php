@@ -88,11 +88,12 @@
 	$rciStats = RCI::GetStatistics( "zone", $zone->ZoneID );
 
 	function MakeImageMap($dc,$zone) {
+		global $config;
 		$zoom=$zone->MapZoom/100;
 		$mapHTML="";
 
 		if(strlen($dc->DrawingFileName)>0){
-			$mapfile="drawings/".$dc->DrawingFileName;
+			$mapfile=$config->ParameterArray["drawingpath"].$dc->DrawingFileName;
 			if(file_exists($mapfile)){
 				if(mime_content_type($mapfile)=='image/svg+xml'){
 				$svgfile = simplexml_load_file($mapfile);
@@ -118,7 +119,7 @@
 	$width=1;
 	$ie8fix="";
 	if(strlen($dc->DrawingFileName) >0){
-		$mapfile="drawings/$dc->DrawingFileName";
+		$mapfile=$config->ParameterArray["drawingpath"] . $dc->DrawingFileName;
 		if(file_exists($mapfile)){
 			if(mime_content_type($mapfile)=='image/svg+xml'){
 				$svgfile = simplexml_load_file($mapfile);
@@ -145,18 +146,22 @@ $(document).ready(function() {
 		}
 	}
 	// If no mapfile is set then we don't need the buttons to control drawing the map.  Adjust the CSS to hide them and make the heading centered
-	if(strlen($dc->DrawingFileName) <1 || !file_exists("drawings/$dc->DrawingFileName")){
+	if(strlen($dc->DrawingFileName) <1 || !file_exists($config->ParameterArray["drawingpath"] . $dc->DrawingFileName)){
 		$screenadjustment="<style type=\"text/css\">.dcstats .heading > div { width: 100% !important;} .dcstats .heading > div + div { display: none; }</style>";
 	}
 		
 	if ( $config->ParameterArray["mUnits"] == "english" ) {
 		$vol = __("Square Feet");
+		$volunit = "ft&sup2;";
 		$tempUnits = "F";
 		$density = __("Watts per Square Foot");
+		$densunit = "W/ft&sup2;";
 	} else {
 		$vol = __("Square Meters");
+		$volunit = "m&sup2;";
 		$tempUnits = "C";
 		$density = __("Watts per Square Meter" );
+		$densunit = "W/m&sup2;";
 	}
 	//aproximate proportion between zone/DC 
 	$prop_zone_dc=($zone->MapX2-$zone->MapX1)*($zone->MapY2-$zone->MapY1)/$width/$height;
@@ -206,68 +211,68 @@ echo '<div class="main">
 	<div>',__("Available"),'</div>
   </div>
   <div>
-	<div>',sprintf(__("Total U")." %5d",$zoneStats["TotalU"]),'</div>
-	<div>',sprintf("%3d",$zoneStats["Infrastructure"]),'</div>
-	<div>',sprintf("%3d",$zoneStats["Occupied"]),'</div>
-	<div>',sprintf("%3d",$zoneStats["Allocated"]),'</div>
-	<div>',sprintf("%3d",$zoneStats["Available"]),'</div>
+	<div>',sprintf(__("Total U")." %s",number_format($zoneStats["TotalU"])),'</div>
+	<div align="right">',sprintf("%s",number_format($zoneStats["Infrastructure"])),'</div>
+	<div align="right">',sprintf("%s",number_format($zoneStats["Occupied"])),'</div>
+	<div align="right">',sprintf("%s",number_format($zoneStats["Allocated"])),'</div>
+	<div align="right">',sprintf("%s",number_format($zoneStats["Available"])),'</div>
   </div>
   <div>
 	<div>',__("Percentage"),'</div>
-	<div>',(($zoneStats["TotalU"])?sprintf("%3.1f%%",$zoneStats["Infrastructure"]/$zoneStats["TotalU"]*100):"0"),'</div>
-	<div>',(($zoneStats["TotalU"])?sprintf("%3.1f%%",$zoneStats["Occupied"]/$zoneStats["TotalU"]*100):"0"),'</div>
-	<div>',(($zoneStats["TotalU"])?sprintf("%3.1f%%",$zoneStats["Allocated"]/$zoneStats["TotalU"]*100):"0"),'</div>
-	<div>',(($zoneStats["TotalU"])?sprintf("%3.1f%%",$zoneStats["Available"]/$zoneStats["TotalU"]*100):"0"),'</div>
+	<div align="right">',(($zoneStats["TotalU"])?sprintf("%s",number_format($zoneStats["Infrastructure"]/$zoneStats["TotalU"]*100,1)):"0"),'%</div>
+	<div align="right">',(($zoneStats["TotalU"])?sprintf("%s",number_format($zoneStats["Occupied"]/$zoneStats["TotalU"]*100,1)):"0"),'%</div>
+	<div align="right">',(($zoneStats["TotalU"])?sprintf("%s",number_format($zoneStats["Allocated"]/$zoneStats["TotalU"]*100,1)):"0"),'%</div>
+	<div align="right">',(($zoneStats["TotalU"])?sprintf("%s",number_format($zoneStats["Available"]/$zoneStats["TotalU"]*100,1)):"0"),'%</div>
   </div>
   </div> <!-- END div.table -->
   <div class="table border">
   <div>
         <div>',__("Computed Wattage"),'</div>
-        <div>',sprintf("%7d %s", $zoneStats["ComputedWatts"], __("Watts")),'</div>
+        <div>',sprintf("%s",number_format($zoneStats["ComputedWatts"]/1000)),' kW</div>
   </div>
   <div>
 		<div>',__("Measured Wattage"), '</div>
-		<div>',sprintf("%7d %s", $zoneStats["MeasuredWatts"], __("Watts")),'</div>
+		<div>',sprintf("%s",number_format($zoneStats["MeasuredWatts"]/1000)),' kW</div>
   </div>
   <div>
         <div>',__("BTU Computation from Computed Watts"),'</div>
-        <div>',sprintf("%8d ".__("BTU"),$zoneStats["ComputedWatts"]*3.412 ),'</div>
+        <div>',sprintf("%s", number_format($zoneStats["ComputedWatts"]*3.412/1000)),' kBTU</div>
   </div>
   <div>
         <div>',__("Zone Size (approximate)"),'</div>
-        <div>',sprintf("%8d %s",$dc->SquareFootage*$prop_zone_dc, $vol),'</div>
+        <div>',sprintf("%s %s",number_format($dc->SquareFootage*$prop_zone_dc), $volunit),'</div>
   </div>
   <div>
         <div>',$density,' (',__("approximate"),')</div>
-        <div>',(($dc->SquareFootage)?sprintf("%8d ".__("Watts"),$zoneStats["ComputedWatts"]/$dc->SquareFootage/$prop_zone_dc):"0 ".__("Watts")),'</div>
+        <div>',(($dc->SquareFootage)?sprintf("%s ",number_format($zoneStats["ComputedWatts"]/$dc->SquareFootage/$prop_zone_dc,0)):"0 ").$densunit.'</div>
   </div>
   <div>
   	<div>',__("Total Cabinets"),'</div>
-  	<div>',sprintf("%d", $zoneStats["TotalCabinets"]),'</div>
+  	<div>',sprintf("%s",number_format($zoneStats["TotalCabinets"])),'</div>
   </div>
   <div>
         <div>',__("Minimum Cooling Tonnage (Based on Computed Watts)"),'</div>
-        <div>',sprintf("%7d ".__("Tons"),$zoneStats["ComputedWatts"]*3.412*1.15/12000),'</div>
+        <div>',sprintf("%7s ".__("Tons"),number_format($zoneStats["ComputedWatts"]*3.412*1.15/12000)),'</div>
   </div>
   <div>
         <div>',__("Average Temperature"),'</div>
-        <div>',sprintf("%7d %s", $zoneStats["AvgTemp"], __("°". $tempUnits)),'</div>
+        <div>',sprintf("%s %s", number_format($zoneStats["AvgTemp"]), __("°". $tempUnits)),'</div>
   </div>
   <div>
         <div>',__("Average Humidity"), '</div>
-        <div>',sprintf("%7d %s", $zoneStats["AvgHumidity"], __("%")),'</div>
+        <div>',sprintf("%s %s", number_format($zoneStats["AvgHumidity"]), __("%")),'</div>
   </div>
   <div>
 		<div>',__("RCI Low Percentage (Overcooling)"), '</div>
-		<div>',(($rciStats["TotalCabinets"])?sprintf("%7d %s",
-					$rciStats["RCILowCount"] / $rciStats["TotalCabinets"] * 100,
+		<div>',(($rciStats["TotalCabinets"])?sprintf("%s %s",
+					number_format($rciStats["RCILowCount"] / $rciStats["TotalCabinets"] * 100),
 					__("%")):"0 ".__("%")),
 		'</div>
   </div>
   <div>
 		<div>',__("RCI High Percentage (Cabinets Satisfied)"), '</div>
 		<div>',(($rciStats["TotalCabinets"])?sprintf( "%7d %s",
-					(1-$rciStats["RCIHighCount"] / $rciStats["TotalCabinets"]) * 100,
+					number_format((1-$rciStats["RCIHighCount"] / $rciStats["TotalCabinets"]) * 100),
 					__("%")):"100 ".__("%")),'</div>
   </div>
 </div> <!-- END div.table -->
@@ -290,7 +295,7 @@ $select='<select>';
 	}
 $select.='</select>';
 
-echo $select.'</div></div>'.MakeImageMap($dc,$zone);
+echo $select.'</div></div><br><br><div>'.MakeImageMap($dc,$zone).'</div>';
 
 echo '
 </div></div>
@@ -322,6 +327,18 @@ echo '
 		</ul>
 	</li>
 </ul>';
+
+print "<br>";
+$cabrow=new CabRow();
+$cabrow->ZoneID=$_GET["zone"];
+$cabrowlist=$cabrow->GetCabRowsByZones();
+foreach($cabrowlist as $cabRow){
+	print " <a href=\"rowview.php?row=$cabRow->CabRowID\">[ ".__("Return to Row")." $cabRow->Name ]</a><br>";
+}
+
+if($dc->DataCenterID>0){
+	print " <a href=\"dc_stats.php?dc=$dc->DataCenterID\">[ ".__("Return to")." $dc->Name ]</a>";
+}
 ?>
 
 </div><!-- END div.main -->
@@ -340,6 +357,11 @@ echo '
 				},500);
 			}else{
 				var firstcabinet=$('#dc<?php echo $dc->DataCenterID;?> > ul > li:first-child').attr('id');
+				// If we have no children,
+				if (typeof firstcabinet == 'undefined') {
+					// use the 1st-born child of our parent: may, or may not, be us
+					firstcabinet=$('#dc<?php echo $dc->DataCenterID;?> ').attr('id');
+				}
 				expandToItem('datacenters',firstcabinet);
 			}
 		}

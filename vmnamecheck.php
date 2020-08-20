@@ -1,7 +1,6 @@
 <?php
     require_once('db.inc.php');
     require_once('facilities.inc.php');
-	require_once('swiftmailer/swift_required.php');
     
     $vm=new VM();
     $dev=new Device();
@@ -47,7 +46,7 @@
 		$error.=__("Data center team address").": <span class=\"errmsg\">".$e->getMessage()."</span><br>\n";
 	}
 
-	$logo=getcwd().'/images/'.$config->ParameterArray["PDFLogoFile"];
+	$logo=getcwd().'/'.$config->ParameterArray["PDFLogoFile"];
 	$logo=$message->embed(Swift_Image::fromPath($logo)->setFilename('logo.png'));
 	
 	$style = "

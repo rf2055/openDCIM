@@ -154,6 +154,9 @@ class DataCenter {
 		}
 
 		$this->DataCenterID=$dbh->lastInsertId();
+		
+		updateNavTreeHTML();
+				
 		(class_exists('LogActions'))?LogActions::LogThis($this):'';
 		return true; 
 	}
@@ -217,6 +220,8 @@ class DataCenter {
 		$sql="DELETE FROM fac_DataCenter WHERE DataCenterID=$this->DataCenterID;";
 		$this->exec($sql);
 		
+		updateNavTreeHTML();
+				
 		(class_exists('LogActions'))?LogActions::LogThis($this):'';
 		return true;
 	}
@@ -237,6 +242,8 @@ class DataCenter {
 		$old->DataCenterID=$this->DataCenterID;
 		$old->GetDataCenter();
 
+		updateNavTreeHTML();
+				
 		(class_exists('LogActions'))?LogActions::LogThis($this,$old):'';
 		return $this->query($sql);		
 	}
@@ -326,11 +333,12 @@ class DataCenter {
     }
 
 	function GetOverview(){
+		global $config;
 		$this->MakeSafe();
 		$statusarray=array();	
 		// check to see if map was set
 		if(strlen($this->DrawingFileName)){
-			$mapfile="drawings".DIRECTORY_SEPARATOR.$this->DrawingFileName;
+			$mapfile=$config->ParameterArray['drawingpath'].DIRECTORY_SEPARATOR.$this->DrawingFileName;
 
 			$overview=array();
 			$space=array();

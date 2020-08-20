@@ -1,7 +1,7 @@
 <?php
-$codeversion="4.4.1";
 
-require_once( "preflight.inc.php" );
+require_once( "version.php" );
+require_once( "preflight.php" );
 
 // Make sure that a db.inc.php has been created
 	if(!file_exists("db.inc.php")){
@@ -1140,6 +1140,29 @@ function upgrade(){
 
 		$config->rebuild();
 	}
+	if($version=="4.5"){
+		$results[]=applyupdate("db-4.5-to-18.01.sql");
+
+		print '<iframe src="build_image_cache.php" height="250" width="220" scrolling="no" style="border: 0px;"></iframe>';
+
+		$config->rebuild();
+	}
+	if($version=="18.01"){
+		$results[]=applyupdate("db-18.01-to-18.02.sql");
+
+		$config->rebuild();
+	}
+	if($version=="18.02"){
+		$results[]=applyupdate("db-18.02-to-19.01.sql");
+
+		$config->rebuild();
+	}
+	if($version=="19.01"){
+		error_log("Applying database update from 19.01 to 20.01");
+		$results[]=applyupdate("db-19.01-to-20.01.sql");
+
+		$config->rebuild();
+	}
 }
 
 	if($upgrade==true){ //If we're doing an upgrade don't call the rest of the installer.
@@ -1328,6 +1351,9 @@ if(isset($results)){
 	
 //Installation Complete
 	if($nodept=="" && $nodc=="" && $nocab==""){ // All three primary sections have had at least one item created
+		if(!isset($_REQUEST['complete']) && !isset($_REQUEST['dept']) && !isset($_REQUEST['cab']) && !isset($_REQUEST['dc']) && !isset($_REQUEST['ldap'])){
+			header('Location: '.redirect("install.php?complete&preflight-ok"));
+		}
 		//enable the finish menu option
 		$complete=true;
 	}
@@ -1352,6 +1378,13 @@ if(isset($results)){
   <script type="text/javascript" src="scripts/jquery.miniColors.js"></script>
   <script type="text/javascript" src="scripts/jquery.ui.multiselect.js"></script>
   <script type="text/javascript">
+	if(window.location.href.indexOf("preflight-ok") == -1){
+		if(window.location.href.indexOf("?") == -1){
+			window.location.href=window.location.href+'?preflight-ok';
+		}else{
+			window.location.href=window.location.href+'&preflight-ok';
+		}
+	}
 	$(document).ready( function() {
 		$("select:not('#tooltip, #cdutooltip')").each(function(){
 			$(this).val($(this).attr('data'));
@@ -1745,9 +1778,7 @@ echo '<div id="ldap">
 <p>Be sure to visit the <a href="configuration.php">Configuration</a> page to set any new defaults that may have been introduced.</p>
 
 <h2>Online Repository</h2>
-<p>If you wish to synchronize with the online repository, you must first pull the current listing of Manufacturer Names, which requires an active connection to the internet
-from the server running openDCIM.  In order to allow you to restrict connections as much as possible, the entire process runs across an SSL connection to
-https://repository.opendcim.org.  This process is managed through the Template Management -> Repository Sync interface.  Once you have a manufacturer synchronized, you may download individual templates for that manufacturer.</p>
+<p>If you wish to synchronize with the online repository, you must first pull the current listing of Manufacturer Names, which requires an active connection to the internet from your browser (not the server running openDCIM).  Go to Template Management -> Repository Sync and then choose Manufacturers, first.   Once you have synchronized manufacturer names, you may choose individual templates associated with those manufacturers to download into your local installation.</p>
 </form>
 
 </div></div>
@@ -1797,6 +1828,13 @@ function resize(){
 	}
 }
 $(document).ready(function(){
+	// add some polish to the user experience, if a select box isn't set attempt
+	// to set it to whatever the value for 0 is, new cabinet, new dc, etc
+	$('select').each(function(key,element){
+		if($(element).find('option:selected').length==0){
+			element.value=0;
+		}
+	})
 	resize();
 	// redraw the screen if the window size changes for some reason
 	$(window).resize(function(){

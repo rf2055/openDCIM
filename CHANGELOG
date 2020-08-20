@@ -6,6 +6,61 @@ GitHub, at http://github.com/samilliken/openDCIM/issues, where you can also down
 the latest development version.  However, it is not advised to pull from GitHub unless you
 are simply testing, as some functionality can break between releases.
 
+Changes in 20.01
+----------------
+* Complete overhaul of the SAML Integration.   Tested against KeyCloak and Ping Federate.  Should be pretty much standard.
+* Container build - if you want an "Easy Button" for setup, deploy as a container.
+* Support for redis session handling - if you run multiple backends, you need to enable this to keep session handling straight
+* User Manager - UserID is now displayed in the pick list, not just First/Last Name
+* Some fixes for metric system users
+* Performance improvements
+* New API routes
+* Bulk Move/Deletes now supports using the DB Key field for devices and data centers
+* Ability to pass parameters in localreports.json for localized reports
+* LDAP login enhancements for better compatibility
+* Added a database/config entry for allowing an "Emergency Login" (under the LDAP section)
+* Full details available at https://github.com/samilliken/openDCIM/milestone/19?closed=1
+
+Changes in 19.01
+----------------
+* Ability to specify where the pictures and drawings folders are (easier for Containers)
+* Ability to specify most of the db.inc.php settings through environment variables (easier for Containers)
+* Added in a new Custom Search block which will let you search on any field of the device model
+* Added API POST and PUT routes for creating/updating cabinets
+* Added routes to retrieve and set audit logs via the API
+* Added in an index to the fac_GenericLog table to help speed up queries
+* Added a cleanup routine for logs (optional) to trim entries older than specified date
+* Added a configuration item for days beyond 'Install Date' for a reservation to be held
+* Added a report to show current reservations and the specified 'Install Date'
+* Added a configuration item allowing site admin to specify if Warning/Critical sensor polls should be emailed
+* Added the ability to pull in custom reports to the Reports page (see Wiki)
+* Fixed a CSS issue that kept the RowView from properly displaying Department colors
+* A few bug fixes, per usual
+
+Changes in 18.02
+----------------
+* Enhanced LDAP integration, with better support for Active Directory environments
+* Bulk network import now supports rear ports for patch panels
+* Storage room items are now in lexicographical order
+* Fixed bug where Switch Status was not honoring the OptIn/OptOut tags
+* Fixed UI bug where copying a device would not show the new device until after refresh
+* Fixed the ReportAssetExcel file to look at Status instead of the old Reservation field
+* Fixed query for getting cabinets by department
+* Allow for pictures and drawings folders to be user selected (more container friendly)
+* Allow for db.inc.php values to be pulled from Environment (more container friendly)
+* Other bug fixes too minor or too embarassing to document
+
+Changes in 18.01
+----------------
+* Nomenclature for releases has changed to YY.nn, as this ends the debate over what warrants a major vs minor number change
+* Added some error logging for LDAP authentication failures
+* Added in more bulk import functions - Users and Departments
+* Converted some more reports over to Excel as we move away from PDF reports
+* Network map updated to differentiate between front and rear ports
+* Updated DataTables to the latest compatible release
+* HUGE performance improvements by caching device imaging and the navigation tree HTML, rather than building on the fly
+* Other bug fixes, as usual.
+
 Changes in 4.5
 --------------
 * Reservation is no longer a yes/no field.  Has been replaced with a user customizable list of Device Status values.

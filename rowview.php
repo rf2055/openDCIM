@@ -73,17 +73,15 @@
 		$body.=BuildCabinet($cabinet->CabinetID,$side);
 	}
 
-	$dcID=$cabinets[0]->DataCenterID;
+	$dcID=$cabrow->DataCenterID;
 	$dc->DataCenterID=$dcID;
 	$dc->GetDataCenterbyID();
 
 	foreach(Department::GetDepartmentListIndexedbyID() as $deptid => $d){
-		if($d->DeptColor!="#FFFFFF"){
-            // If head is empty then we don't have any custom colors defined above so add a style container for these
-            $head=($head=="")?"\t\t<style type=\"text/css\">\n":$head;
-			$head.="\t\t\t.dept$deptid {background-color:$d->DeptColor;}\n";
-            $legend.="\t\t<div class=\"legenditem\"><span class=\"border colorbox dept$deptid\"></span> - <span>$d->Name</span></div>\n";
-		}
+		// If head is empty then we don't have any custom colors defined above so add a style container for these
+		$head=($head=="")?"\t\t<style type=\"text/css\">\n":$head;
+		$head.="\t\t\t.dept$deptid {background-color:$d->DeptColor;}\n";
+		$legend.="\t\t<div class=\"legenditem\"><span class=\"border colorbox dept$deptid\"></span> - <span>$d->Name</span></div>\n";
 	}
 
 	// If $head isn't empty then we must have added some style information so close the tag up.
@@ -115,11 +113,13 @@ echo $head,'  <script type="text/javascript" src="scripts/jquery.min.js"></scrip
   <script type="text/javascript" src="scripts/common.js?v',filemtime('scripts/common.js'),'"></script>
   <script type="text/javascript">
 	$(document).ready(function() {
-		$(".cabinet .error").append("*");
-		$("<button>",{type: "button"}).text("'.__("Add new cabinet").'").click(function(){
+		$(".cabinet .error").append("*");';
+if ($person->RackAdmin || $person->SiteAdmin) {
+		echo '$("<button>",{type: "button"}).text("'.__("Add new cabinet").'").click(function(){
 			document.location.href="cabinets.php?dcid=',$dcID,'&zoneid=',$cabrow->ZoneID,'&cabrowid=',$cabrow->CabRowID,'";
-		}).prependTo($(".main"));
-		$("<button>",{id: "reverse", type: "button"}).text("'.(isset($_GET["rear"])?__("Front View"):__("Rear View")).'").click(function(){
+		}).prependTo($(".main"));';
+}
+		echo '$("<button>",{id: "reverse", type: "button"}).text("'.(isset($_GET["rear"])?__("Front View"):__("Rear View")).'").click(function(){
 			document.location.href="rowview.php?row=',$cabrow->CabRowID.(isset($_GET["rear"])?"":"&rear"),'";
 		}).prependTo($(".main"));';
 
@@ -169,11 +169,23 @@ $('#centeriehack').width($('#centeriehack div.cabinet').length * 278);
 </script>
 </div></div>
 <?php
+	print "<br>";
+	if($cabrow->ZoneID){ 
+		$zone=new Zone();
+		$zone->ZoneID=$cabrow->ZoneID;
+		$zone->GetZone();
+		print " <a href=\"zone_stats.php?zone=$zone->ZoneID\">[ ".__("Return to Zone")." $zone->Description ]</a>";
+	}
 	if($dcID>0){
-		print "	<br><br><br><a href=\"dc_stats.php?dc=$dcID\">[ ".__("Return to")." $dc->Name ]</a>";
+		print "<br><a href=\"dc_stats.php?dc=$dcID\">[ ".__("Return to")." $dc->Name ]</a>";
 	}
 ?>
 </div>  <!-- END div.main -->
+<?php
+	if ($person->SiteAdmin || $person->RackAdmin || $person->WriteAccess) {
+                print '<div><input type="hidden" name="cabinetdraggable" id="cabinetdraggable" value="yes"></div>';
+        }
+?>
 
 <div class="clear"></div>
 </div>
@@ -201,7 +213,7 @@ $('#centeriehack').width($('#centeriehack div.cabinet').length * 278);
 		opentree();
 
 		// Add controls to the rack
-		cabinetimagecontrols();
+		//cabinetimagecontrols();
 	});
 </script>
 </body>

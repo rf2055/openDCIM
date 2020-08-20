@@ -74,7 +74,10 @@
 		$decimalplaces=0;
 		function FindTicks(&$decimalplaces,$panelCap,&$dataMajorTicks){
 			$err=false;
-			for ( $i = 0; $i < $panelCap; $i+=( $panelCap / 10 ) ) {
+			if($panelCap==0){
+				$panelCap=1;
+			}
+			for ( $i = 0; ($i - $panelCap) < 1; $i+=( $panelCap / 10 ) ) {
 				$tick = sprintf( "%.0${decimalplaces}lf ", $i / 1000 );
 				if(preg_match("/$tick/",$dataMajorTicks)){
 					$err=true;
@@ -256,15 +259,15 @@ echo '	</select>
 </div>
 <div>
    <div><label for="NumberOfPoles">',__("Number of Poles"),'</label></div>
-   <div><input type="number" name="NumberOfPoles" id="NumberOfPoles" size="3" value="',$panel->NumberOfPoles,'"></div>
+   <div><input type="number" name="NumberOfPoles" id="NumberOfPoles" size="3" value="',$panel->NumberOfPoles,'" min="0"></div>
 </div>
 <div>
    <div><label for="MainBreakerSize">',__("Main Breaker Amperage"),'</label></div>
-   <div><input type="number" name="MainBreakerSize" id="MainBreakerSize" size="4" value="',$panel->MainBreakerSize,'"></div>
+   <div><input type="number" name="MainBreakerSize" id="MainBreakerSize" size="4" value="',$panel->MainBreakerSize,'" min="0"></div>
 </div>
 <div>
    <div><label for="PanelVoltage">',__("Panel Voltage"),'</label></div>
-   <div><input type="number" name="PanelVoltage" id="PanelVoltage" size="4" value="',$panel->PanelVoltage,'"></div>
+   <div><input type="number" name="PanelVoltage" id="PanelVoltage" size="4" value="',$panel->PanelVoltage,'" min="0"></div>
 </div>
 <div>
    <div><label for="NumberScheme">',__("Numbering Scheme"),'</label></div>
@@ -424,7 +427,17 @@ echo '		</select>
 ?>
 </div></div>
 
-<?php echo '<a href="index.php">[ ',__("Return to Main Menu"),' ]</a>
+<?php
+	if ($panel->ParentPanelID) {
+		echo '<a href="power_panel.php?PanelID=', $panel->ParentPanelID, '">[ ',__("Return to Parent Panel"),' ]</a><br>';
+	}
+	foreach($dcList as $dc) {
+		if ($panel->MapDataCenterID and $panel->MapDataCenterID==$dc->DataCenterID) {
+			echo '<a href="dc_stats.php?dc=', $dc->DataCenterID, '">[ ',__("Return to"),' ',$dc->Name.' ]</a><br>'; 
+		}
+	}
+
+echo '<a href="index.php">[ ',__("Return to Main Menu"),' ]</a>
 <!-- hiding modal dialogs here so they can be translated easily -->
 <div class="hide">
 	<div title="',__("Power panel delete confirmation"),'" id="deletemodal">

@@ -154,6 +154,11 @@ CREATE TABLE fac_CDUTemplate (
   ATS int(1) NOT NULL,
   SNMPVersion varchar(2) NOT NULL DEFAULT '2c',
   VersionOID varchar(80) NOT NULL,
+  OutletNameOID varchar(80) NOT NULL,
+  OutletDescOID varchar(80) NOT NULL,
+  OutletCountOID varchar(80) NOT NULL,
+  OutletStatusOID varchar(80) NOT NULL,
+  OutletStatusOn varchar(80) NOT NULL,
   Multiplier varchar(6) NULL DEFAULT NULL,
   OID1 varchar(80) NOT NULL,
   OID2 varchar(80) NOT NULL,
@@ -181,6 +186,16 @@ CREATE TABLE fac_ColorCoding (
   PRIMARY KEY(ColorID),
   UNIQUE KEY Name (Name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+--
+-- Create a table for things that we want to cache, such as the Navigation Menu
+--
+
+CREATE TABLE fac_DataCache (
+  ItemType varchar(80) not null,
+  Value mediumtext not null, primary key (ItemType)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
 
 --
 -- Table structure for table fac_DataCenter
@@ -300,6 +315,18 @@ CREATE TABLE fac_Device (
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 
 --
+-- Create a table specifically for device image caching, optimize later 
+--
+
+DROP TABLE IF EXISTS fac_DeviceCache;
+CREATE TABLE fac_DeviceCache (
+  DeviceID int(11) NOT NULL,
+  Front mediumtext CHARACTER SET utf8 COLLATE utf8_unicode_ci NOT NULL,
+  Rear mediumtext CHARACTER SET utf8 COLLATE utf8_unicode_ci NOT NULL,
+  UNIQUE KEY DeviceID (DeviceID)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+--
 -- Table structure for table fac_DeviceTags
 --
 
@@ -374,7 +401,9 @@ CREATE TABLE `fac_GenericLog` (
   Property varchar(40) NOT NULL,
   OldVal varchar(255) NOT NULL,
   NewVal varchar(255) NOT NULL,
-  Time timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+  Time timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY `Object` (`ObjectID`),
+  KEY `ObjectTime` (`ObjectID`, `Time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 --
@@ -402,7 +431,6 @@ CREATE TABLE fac_Ports (
   Label varchar(40) NOT NULL,
   MediaID int(11) NOT NULL DEFAULT '0',
   ColorID int(11) NOT NULL DEFAULT '0',
-  Notes varchar(80) NOT NULL,
   ConnectedDeviceID int(11) DEFAULT NULL,
   ConnectedPort int(11) DEFAULT NULL,
   Notes varchar(80) NOT NULL,
@@ -575,7 +603,7 @@ CREATE TABLE fac_RackRequest (
   SerialNo varchar(40) NOT NULL,
   MfgDate date NOT NULL,
   AssetTag varchar(40) NOT NULL,
-  ESX tinyint(1) NOT NULL,
+  Hypervisor varchar(40) NOT NULL,
   Owner int(11) NOT NULL,
   DeviceHeight int(11) NOT NULL,
   EthernetCount int(11) NOT NULL,
@@ -587,6 +615,7 @@ CREATE TABLE fac_RackRequest (
   LabelColor varchar(80) NOT NULL,
   CurrentLocation varchar(120) NOT NULL,
   SpecialInstructions text NOT NULL,
+  RequestedAction varchar(10) NOT NULL,
   PRIMARY KEY (RequestID),
   KEY RequestorID (RequestorID)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
@@ -760,14 +789,14 @@ INSERT INTO fac_CDUToolTip VALUES(NULL, 'NumOutlets', 'Used/Total Connections', 
 DROP TABLE IF EXISTS fac_Config;
 CREATE TABLE fac_Config (
  Parameter varchar(40) NOT NULL,
- Value varchar(200) NOT NULL,
+ Value text NOT NULL,
  UnitOfMeasure varchar(40) NOT NULL,
  ValType varchar(40) NOT NULL,
  DefaultVal varchar(200) NOT NULL
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 
 INSERT INTO fac_Config VALUES
-  ('Version','4.5','','',''),
+	('Version','20.01','','',''),
 	('OrgName','openDCIM Computer Facilities','Name','string','openDCIM Computer Facilities'),
 	('ClassList','ITS, Internal, Customer','List','string','ITS, Internal, Customer'),
 	('SpaceRed','80','percentage','float','80'),
@@ -781,14 +810,15 @@ INSERT INTO fac_Config VALUES
 	('CriticalColor','#cc0000','HexColor','string','#cc0000'),
 	('CautionColor','#cccc00','HexColor','string','#cccc00'),
 	('GoodColor','#0a0','HexColor','string','#0a0'),
+	('FreeSpaceColor', '#FFFFFF', 'HexColor', 'string', '#FFFFFF'),
 	('MediaEnforce', 'disabled', 'Enabled/Disabled', 'string', 'disabled'),
-  ('OutlineCabinets', 'disabled', 'Enabled/Disabled', 'string', 'disabled'),
-  ('LabelCabinets', 'disabled', 'Enabled/Disabled', 'string', 'disabled'),
+	('OutlineCabinets', 'disabled', 'Enabled/Disabled', 'string', 'disabled'),
+	('LabelCabinets', 'disabled', 'Enabled/Disabled', 'string', 'disabled'),
 	('DefaultPanelVoltage','208','Volts','int','208'),
 	('annualCostPerUYear','200','Dollars','float','200'),
 	('Locale','en_US.utf8','TextLocale','string','en_US.utf8'),
 	('timezone', 'America/Chicago', 'string', 'string', 'America/Chicago'),
-	('PDFLogoFile','logo.png','Filename','string','logo.png'),
+	('PDFLogoFile','images/logo.png','Filename','string','images/logo.png'),
 	('PDFfont','Arial','Font','string','Arial'),
 	('SMTPServer','smtp.your.domain','Server','string','smtp.your.domain'),
 	('SMTPPort','25','Port','int','25'),
@@ -834,11 +864,9 @@ INSERT INTO fac_Config VALUES
 	('RackRequests', 'enabled', 'Enabled/Disabled', 'string', 'Enabled'),
 	('dot', '/usr/bin/dot', 'path', 'string', '/usr/bin/dot'),
 	('AppendCabDC', 'disabled', 'Enabled/Disabled', 'string', 'Disabled'),
-	('ShareToRepo', 'disabled', 'Enabled/Disabled', 'string', 'Disabled'),
 	('APIUserID', '', 'Email', 'string', ''),
 	('APIKey', '', 'Key', 'string', ''),
 	('RequireDefinedUser', 'disabled', 'Enabled/Disabled', 'string', 'Disabled'),
-	('KeepLocal', 'enabled', 'Enabled/Disabled', 'string', 'Enabled'),
 	('SNMPVersion', '2c', 'Version', 'string', '2c'),
 	('U1Position', 'Bottom', 'Top/Bottom', 'string', 'Bottom'),
 	('RCIHigh', '80', 'degrees', 'float', '80'),
@@ -850,39 +878,62 @@ INSERT INTO fac_Config VALUES
 	('v3AuthPassphrase', '', 'Password', 'string', ''),
 	('v3PrivProtocol', '', 'SHA/MD5', 'string', 'SHA'),
 	('v3PrivPassphrase', '', 'Password', 'string', ''),
-  ('PatchPanelsOnly','enabled', 'Enabled/Disabled', 'string', 'enabled'),
-  ('LDAPServer', 'localhost', 'URI', 'string', 'localhost'),
-  ('LDAPBaseDN', 'dc=opendcim,dc=org', 'DN', 'string', 'dc=opendcim,dc=org'),
-  ('LDAPBindDN', 'cn=%userid%,ou=users,dc=opendcim,dc=org', 'DN', 'string', 'cn=%userid%,ou=users,dc=opendcim,dc=org'),
-  ('LDAPBaseSearch', '(&(objectClass=posixGroup)(memberUid=%userid%))', 'DN', 'string', '(&(objectClass=posixGroup)(memberUid=%userid%))'),
-  ('LDAPUserSearch', '(|(uid=%userid%))', 'DN', 'string', '(|(uid=%userid%))'),
-  ('LDAPSessionExpiration', '0', 'Seconds', 'int', '0'),
-  ('LDAPSiteAccess', 'cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
-  ('LDAPReadAccess', 'cn=ReadAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=ReadAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
-  ('LDAPWriteAccess', 'cn=WriteAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=WriteAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
-  ('LDAPDeleteAccess', 'cn=DeleteAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=DeleteAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
-  ('LDAPAdminOwnDevices', 'cn=AdminOwnDevices,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=AdminOwnDevices,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
-  ('LDAPRackRequest', 'cn=RackRequest,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=RackRequest,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
-  ('LDAPRackAdmin', 'cn=RackAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=RackAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
-  ('LDAPBulkOperations', 'cn=BulkOperations,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=BulkOperations,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
-  ('LDAPContactAdmin', 'cn=ContactAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=ContactAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
-  ('LDAPSiteAdmin', 'cn=SiteAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=SiteAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
-  ('SAMLStrict', 'enabled', 'string', 'Enabled/Disabled', 'enabled'),
-  ('SAMLDebug', 'disabled', 'string', 'Enabled/Disabled', 'disabled'),
-  ('SAMLBaseURL', '', 'URL', 'string', 'https://opendcim.local'),
-  ('SAMLShowSuccessPage', 'enabled', 'string', 'Enabled/Disabled', 'enabled'),
-  ('SAMLspentityId', '', 'URL', 'string', 'https://opendcim.local'),
-  ('SAMLspacsURL', '', 'URL', 'string', 'https://opendcim.local/saml/acs.php'),
-  ('SAMLspslsURL', '', 'URL', 'string', 'https://opendcim.local'),
-  ('SAMLspx509cert', '', 'string', 'string', ''),
-  ('SAMLspprivateKey', '', 'string', 'string', ''),
-  ('SAMLidpentityId', '', 'URL', 'string', 'https://accounts.google.com/o/saml2?idpid=XXXXXXXXX'),
-  ('SAMLidpssoURL', '', 'URL', 'string', 'https://accounts.google.com/o/saml2/idp?idpid=XXXXXXXXX'),
-  ('SAMLidpslsURL', '', 'URL', 'string', ''),
-  ('SAMLidpcertFingerprint', '', 'string', 'string', 'FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF'),
-  ('SAMLidpcertFingerprintAlgorithm', '', 'string', 'string', 'sha1'),
-  ('SAMLaccountPrefix', '', 'string', 'string', 'DOMAIN\\'),
-  ('SAMLaccountSuffix', '', 'string', 'string', '@example.org')
+	('PatchPanelsOnly','enabled', 'Enabled/Disabled', 'string', 'enabled'),
+	('LDAPServer', 'localhost', 'URI', 'string', 'localhost'),
+	('LDAPBaseDN', 'dc=opendcim,dc=org', 'DN', 'string', 'dc=opendcim,dc=org'),
+	('LDAPBindDN', 'cn=%userid%,ou=users,dc=opendcim,dc=org', 'DN', 'string', 'cn=%userid%,ou=users,dc=opendcim,dc=org'),
+	('LDAPBaseSearch', '(&(objectClass=posixGroup)(memberUid=%userid%))', 'DN', 'string', '(&(objectClass=posixGroup)(memberUid=%userid%))'),
+	('LDAPUserSearch', '(|(uid=%userid%)(sAMAccountName=%userid%))', 'DN', 'string', '(|(uid=%userid%)(sAMAccountName=%userid%))'),
+  ('LDAPDebug', 'enabled', 'Enabled/Disabled', 'string', 'disabled'),
+	('LDAPSessionExpiration', '0', 'Seconds', 'int', '0'),
+	('LDAPSiteAccess', 'cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
+	('LDAPReadAccess', 'cn=ReadAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=ReadAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
+	('LDAPWriteAccess', 'cn=WriteAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=WriteAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
+	('LDAPDeleteAccess', 'cn=DeleteAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=DeleteAccess,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
+	('LDAPAdminOwnDevices', 'cn=AdminOwnDevices,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=AdminOwnDevices,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
+	('LDAPRackRequest', 'cn=RackRequest,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=RackRequest,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
+	('LDAPRackAdmin', 'cn=RackAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=RackAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
+	('LDAPBulkOperations', 'cn=BulkOperations,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=BulkOperations,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
+	('LDAPContactAdmin', 'cn=ContactAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=ContactAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
+	('LDAPSiteAdmin', 'cn=SiteAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org', 'DN', 'string', 'cn=SiteAdmin,cn=openDCIM,ou=groups,dc=opendcim,dc=org'),
+	('LDAP_Debug_Password', 'dcimadmin', 'string', 'string', 'Leave blank to disable'),
+	('LDAPFirstName','','string','string',''),
+	('LDAPLastName','','string','string',''),
+	('LDAPEmail','','string','string',''),
+	('LDAPPhone1','','string','string',''),
+	('LDAPPhone2','','string','string',''),
+	('LDAPPhone3','','string','string',''),
+	('SAMLGroupAttribute', '', 'string', '', 'memberOf'),
+	('SAMLBaseURL', '', 'string', 'string', ''),
+	('SAMLShowSuccessPage', 'enabled', 'string', 'Enabled/Disabled', 'enabled'),
+	('SAMLspentityId', '', 'URL', 'string', 'https://opendcim.local'),
+	('SAMLspx509cert', '', 'string', 'string', ''),
+	('SAMLspprivateKey', '', 'string', 'string', ''),
+	('SAMLidpentityId', '', 'URL', 'string', 'https://accounts.google.com/o/saml2?idpid=XXXXXXXXX'),
+	('SAMLidpssoURL', '', 'URL', 'string', 'https://accounts.google.com/o/saml2/idp?idpid=XXXXXXXXX'),
+	('SAMLidpslsURL', '', 'URL', 'string', ''),
+	('SAMLaccountPrefix', '', 'string', 'string', 'DOMAIN\\'),
+	('SAMLaccountSuffix', '', 'string', 'string', '@example.org'),
+  ('SAMLidpx509cert', '', 'string', 'string', ''),
+  ('SAMLIdPMetadataURL', '', 'string', 'string', ''),
+	('SAMLCertCountry', '', 'string', 'string', 'US'),
+  ('SAMLCertProvince', '', 'string', 'string', 'Tennessee'),
+  ('SAMLCertOrganization', '', 'string', 'string', 'openDCIM User'),
+	("AttrFirstName", "givenname", "string", "string", "givenname"),
+	("AttrLastName", "sn", "string", "string", "sn"),
+	("AttrEmail", "mail", "string", "string", "mail"),
+	("AttrPhone1", "telephonenumber", "string", "string", "telephonenumber"),
+	("AttrPhone2", "mobile", "string", "string", "mobile"),
+	("AttrPhone3", "pager", "string", "string", "pager"),
+	("drawingpath", "assets/drawings/", "string", "string", "assets/drawings/"),
+	("picturepath", "assets/pictures/", "string", "string", "assets/pictures/"),
+	("RackRequestsActions", "disabled", "Enabled/Disabled", "string", "disabled"),
+  ('logretention', '0', 'days', 'integer', '0'),
+  ('reportspath', 'assets/reports/', 'string', 'string', 'assets/reports/'),
+  ('ReservationExpiration', '0', 'days', 'integer', '0'),
+  ('PowerAlertsEmail', 'disabled', 'Enabled/Disabled', 'string', 'disabled'),
+  ('SensorAlertsEmail', 'disabled', 'Enabled/Disabled', 'string', 'disabled'),
+  ('AssignCabinetLabels','OwnerName','Name','string','OwnerName')
 ;
 
 --

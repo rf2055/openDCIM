@@ -59,7 +59,7 @@
 
 	$imageselect='<div id="preview"></div><div id="filelist">';
 
-	$path='./drawings';
+	$path='./'.$config->ParameterArray["drawingpath"];
 	$dir=scandir($path);
 	foreach($dir as $i => $f){
 		if(is_file($path.DIRECTORY_SEPARATOR.$f)){
@@ -99,6 +99,9 @@
 
 		$("#containerid").combobox();
 		$("#parentid").combobox();
+
+		$('span.custom-combobox').width($('span.custom-combobox').width()+2);
+
 		$('#datacenterform').validationEngine({});
 		$('#drawingfilename').click(function(){
 			$("#imageselection").dialog({
@@ -119,7 +122,7 @@
 				var preview=$('#imageselection #preview');
 				$(this).click(function(){
 					preview.css({'border-width': '5px', 'width': '380px', 'height': '380px'});
-					preview.html('<img src="drawings/'+$(this).text()+'" alt="preview">').attr('image',$(this).text());
+					preview.html("<img src=\"<?php echo $config->ParameterArray["drawingpath"];?>"+$(this).text()+'" alt="preview">').attr('image',$(this).text());
 					preview.children('img').load(function(){
 						var topmargin=0;
 						var leftmargin=0;

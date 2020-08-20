@@ -21,6 +21,44 @@
   **/
 
 //
+//  URL:  		/api/v1/audit
+//  Method: 	GET
+//  Params:		DeviceID or CabinetID.   If both provided, DeviceID takes precedence.
+//  Returns:	Last audit date of given parameter.
+//
+
+$app->get( '/audit', function() {
+	$r = array();
+	$error = false;
+
+	$attrList = getParsedBody();
+
+	if ( isset( $attrList["DeviceID"] ) ) {
+		$auditList = LogActions::getDeviceAudits( $attrList["DeviceID"] );
+	} elseif ( isset( $attrList["CabinetID"] ) ) {
+		$log = new LogActions();
+		$log->ObjectID = $attrList["CabinetID"];
+		$log->Class = "CabinetAudit";
+		$log->Action = "CertifyAudit";
+		$auditList = $log->Search();
+	} else {
+		$error = true;
+	}
+
+
+	if ( ! $error ) {
+		$r['error'] = false;
+		$r['errorcode'] = 200;
+		$r['audit'] = $auditList;
+	} else {
+		$r['error'] = true;
+		$r['errorcode'] = 403;
+		$r["input"] = $attrList;
+	}
+
+	echoResponse( $r );
+});
+
 //	URL:  /api/v1/people
 //	Method: GET
 //	Params:  none
@@ -30,30 +68,30 @@ $app->get('/people', function() {
 	global $person;
 	
 	$person->GetUserRights();
-	if(!$person->ContactAdmin){
-		$r['error'] = true;
-		$r['errorcode'] = 401;
-		$r['message'] = _("Access Denied");
-	}else{
-		$sp=new People();
-		$loose = false;
-		$outputAttr = array();
-		$attrList = getParsedBody();
-		foreach($attrList as $prop => $val){
-			if ( strtoupper($prop) == "WILDCARDS" ) {
-				$loose = true;
-			} elseif ( strtoupper($prop) == "ATTRIBUTES" ) {
-				$outputAttr = explode( ",", $val );
-			} elseif ( property_exists( $sp, $prop )) {
-				$sp->$prop=$val;
-			}
-		}
 
-		$r = array();
-		$r['error'] = false;
-		$r['errorcode'] = 200;
-		$r['people'] = specifyAttributes( $outputAttr, $sp->Search( false, $loose ));
+	$sp=new People();
+	$loose = false;
+	$outputAttr = array();
+	$attrList = getParsedBody();
+	foreach($attrList as $prop => $val){
+		if ( strtoupper($prop) == "WILDCARDS" ) {
+			$loose = true;
+		} elseif ( strtoupper($prop) == "ATTRIBUTES" ) {
+			$outputAttr = explode( ",", $val );
+		} elseif ( property_exists( $sp, $prop )) {
+			$sp->$prop=$val;
+		}
 	}
+
+	if(!$person->ContactAdmin){
+		// Anybody that isn't an admin gets limited fields returned
+		$outputAttr = array( 'PersonID', 'FirstName', 'LastName' );
+	}
+
+	$r = array();
+	$r['error'] = false;
+	$r['errorcode'] = 200;
+	$r['people'] = specifyAttributes( $outputAttr, $sp->Search( false, $loose ));
 
 	echoResponse( $r );
 });
@@ -68,30 +106,24 @@ $app->get('/people', function() {
 $app->get('/department', function() use($person) {
 	$r = array();
 
-	if ( !$person->ContactAdmin){
-		$r['error'] = true;
-		$r['errorcode'] = 401;
-		$r['message'] = _("Access Denied");
-	} else {
-		$dList = array();
-		$dept=new Department();
-		$loose = false;
-		$outputAttr = array();
-		$attrList = getParsedBody();
-		foreach($attrList as $prop => $val){
-			if ( strtoupper($prop) == "WILDCARDS" ) {
-				$loose = true;
-			} elseif ( strtoupper($prop) == "ATTRIBUTES" ) {
-				$outputAttr = explode( ",", $val );
-			} elseif( property_exists( $dept, $prop )) {
-				$dept->$prop=$val;
-			}
-		}		
+	$dList = array();
+	$dept=new Department();
+	$loose = false;
+	$outputAttr = array();
+	$attrList = getParsedBody();
+	foreach($attrList as $prop => $val){
+		if ( strtoupper($prop) == "WILDCARDS" ) {
+			$loose = true;
+		} elseif ( strtoupper($prop) == "ATTRIBUTES" ) {
+			$outputAttr = explode( ",", $val );
+		} elseif( property_exists( $dept, $prop )) {
+			$dept->$prop=$val;
+		}
+	}		
 
-		$r['error'] = false;
-		$r['errorcode'] = 200;
-		$r['department'] = specifyAttributes( $outputAttr, $dept->Search( false, $loose ));
-	}
+	$r['error'] = false;
+	$r['errorcode'] = 200;
+	$r['department'] = specifyAttributes( $outputAttr, $dept->Search( false, $loose ));
 
 	echoResponse( $r );
 });
@@ -249,6 +281,32 @@ $app->get( '/cabinet/:cabinetid', function( $cabinetid ) {
 });
 
 //
+//	URL:	/api/v1/cabinet/:cabinetid/getpictures
+//	Method:	GET
+//	Params: cabinetid (passed in URL)
+//	Returns:  HTML representation of a device
+//
+
+$app->get( '/cabinet/:cabinetid/getpictures', function( $cabinetid ) {
+	$cab=new Cabinet($cabinetid);
+	
+	$r['error']=true;
+	$r['errorcode']=404;
+	$r['message']=__("Unknown error");
+
+	if(!$cab->GetCabinet()){
+		$r['message']=__("Cabinet not found");
+	}else{
+		$r['error']=false;
+		$r['errorcode']=200;
+		$r['message']="";
+		$r['pictures']=$cab->getPictures();
+	}
+
+	echoResponse( $r );
+});
+
+//
 //	URL:	/api/v1/cabinet/bydc/:datacenterid
 //	Method:	GET
 //	Params: datacenterid (passed in URL)
@@ -389,7 +447,6 @@ $app->get( '/device/:deviceid', function( $deviceid ) {
 		$r['error']=true;
 		$r['errorcode']=404;
 		$r['message']=__("No device found with DeviceID").$deviceid;
-		echoResponse( $r );
 	}else{
 		$r['error']=false;
 		$r['errorcode']=200;
@@ -625,7 +682,7 @@ $app->get( '/devicestatus', function() {
 $app->get( '/devicestatus/:statusid', function($statusid) {
 	$r['error'] = false;
 	$r['errorcode'] = 200;
-	$ds=new DeviceStatus($statisid);
+	$ds=new DeviceStatus($statusid);
 	if(!$ds->getStatus()){
 		$r['error']=true;
 		$r['errorcode']=404;
@@ -1065,6 +1122,220 @@ $app->get( '/cabrow', function() {
 	echoResponse( $r );
 });
 
+//
+//	URL:	/api/v1/cabrow/:cabrowid/devices
+//	Method:	GET
+//	Params:	none
+//	Returns:  All devices in the cabinet row 
+//
+
+$app->get( '/cabrow/:cabrowid/devices', function($cabrowid) {
+	$r['error']=false;
+	$r['errorcode']=200;
+	$r['device']=Device::SearchDevicebyCabRow($cabrowid);
+	echoResponse( $r );
+});
+
+
+//
+//	URL:		/api/v1/sensorreadings
+//	Method:	GET
+//	Params:	none
+//	Returns:	Sensor readings for all sensors
+
+$app->get( '/sensorreadings', function() {
+	$sensorreadings=new SensorReadings();
+	$outputAttr = array();
+	$attrList = getParsedBody();
+	$loose = false;
+
+	foreach($attrList as $prop => $val){
+		if ( strtoupper($prop) == "WILDCARDS" ) {
+			$loose = true;
+		}elseif(strtoupper($prop) == "ATTRIBUTES" ) {
+			$outputAttr = explode( ",", $val );
+		}elseif (property_exists( $sensorreadings, $prop )) {
+			$sensorreadings->$prop=$val;
+		}
+	}
+
+	$r['error']=false;
+	$r['errorcode']=200;
+	$r['sensorreadings']=specifyAttributes($outputAttr, $sensorreadings->Search(false,$loose));
+	echoResponse( $r );	
+});
+
+//
+//	URL:	/api/v1/sensorreadings/:sensorid
+//	Method:	GET
+//	Params:	none
+//	Returns:	Sensor readings for :sensorid
+
+$app->get( '/sensorreadings/:sensorid', function($sensorid) {
+	$sensorreadings=new SensorReadings();
+	$sensorreadings->SensorID=$sensorid;
+
+	if(!$sensorreadings->GetSensorReadingsByID()){
+		$r['error']=true;
+                $r['errorcode']=404;
+                $r['message']=__("No sensor readings found with SensorID ").$sensorid;
+	}else{
+		$r['error']=false;
+        	$r['errorcode']=200;
+	        $r['sensorreadings']=$sensorreadings;
+	}
+	echoResponse( $r );
+});
+
+//
+//	URL:	/api/v1/pdustats
+//	Method:	GET
+//	Params:	none
+//	Returns:	PDU Stats reading for all pdus
+
+$app->get( '/pdustats', function() {
+	$pdustats=new PDUStats();
+	$outputAttr = array();
+	$attrList = getParsedBody();
+	$loose = false;
+
+	foreach($attrList as $prop => $val){
+		if ( strtoupper($prop) == "WILDCARDS" ) {
+			$loose = true;
+		}elseif(strtoupper($prop) == "ATTRIBUTES" ) {
+			$outputAttr = explode( ",", $val );
+		}elseif (property_exists( $pdustats, $prop )) {
+			$pdustats->$prop=$val;
+		} 
+	}
+
+	$r['error']=false;
+	$r['errorcode']=200;
+	$r['pdustats']=specifyAttributes($outputAttr, $pdustats->Search(false,$loose));
+	echoResponse( $r );
+});
+
+//
+//	URL:	/api/v1/pdustats/:pduid
+//	Method:	GET
+//	Params:	pduid
+//	Returns:	PDU Stats reading for pduid
+
+$app->get( '/pdustats/:pduid', function($pduid) {
+	$pdustats=new PDUStats();
+	$pdustats->PDUID=$pduid;
+
+	if(!$pdustats->GetPDUStatsByID()){
+		$r['error']=true;
+		$r['errorcode']=404;
+		$r['message']=__("No PDU Stats found with PDUID ").$pduid;
+	}else{
+		$r['error']=false;
+		$r['errorcode']=200;
+		$r['pdustats']=$pdustats;
+	}
+	echoResponse( $r );
+});
+
+//
+//	URL:	/api/v1/vminventory
+//	Method:	GET
+//	Params:	none
+//	Returns:	All VMs info 
+
+$app->get( '/vminventory', function() {
+	$vm = new VM();
+	$outputAttr = array();
+	$attrList = getParsedBody();
+	$loose = false;
+
+	foreach($attrList as $prop => $val){
+		if ( strtoupper($prop) == "WILDCARDS" ) {
+			$loose = true;
+		}elseif(strtoupper($prop) == "ATTRIBUTES" ) {
+			$outputAttr = explode( ",", $val );
+		}elseif (property_exists( $vm, $prop )) {
+			$vm->$prop=$val;
+		}
+	}
+
+	$r['error']=false;
+	$r['errorcode']=200;
+	$r['vminventory']=specifyAttributes($outputAttr, $vm->SearchVM(false,$loose));
+	echoResponse( $r );
+});
+
+//
+//	URL:	/api/v1/vminventory/:vmindex
+//	Method:	GET
+//	Params:	vmindex
+//	Returns:	VM Inventory data for vmindex
+
+$app->get( '/vminventory/:vmindex', function($vmindex) {
+	$vm=new VM();
+	$vm->VMIndex=$vmindex;
+
+	if(!$vm->GetVMbyIndex()){
+		$r['error']=true;
+		$r['errorcode']=404;
+		$r['message']=__("No VM information found with VMIndex ").$vmindex;
+	}else{
+		$r['error']=false;
+		$r['errorcode']=200;
+		$r['vminventory']=$vm;
+	}
+	echoResponse( $r );
+});
+
+//
+//	URL:	/api/v1/powerpanel
+//	Method:	GET
+//	Params:	none
+//	Returns:	All Powerpanel info
+
+$app->get( '/powerpanel', function() {
+	$pp = new PowerPanel();
+	$outputAttr = array();
+	$attrList = getParsedBody();
+	$loose = false;
+
+	foreach($attrList as $prop => $val){
+		if ( strtoupper($prop) == "WILDCARDS" ) {
+			$loose = true;
+		}elseif(strtoupper($prop) == "ATTRIBUTES" ) {
+			$outputAttr = explode( ",", $val );
+		}elseif (property_exists( $pp, $prop )) {
+			$pp->$prop=$val;
+		}
+	}
+
+	$r['error']=false;
+	$r['errorcode']=200;
+	$r['powerpanel']=specifyAttributes($outputAttr, $pp->Search(false,$loose));
+	echoResponse( $r );
+});
+
+//
+//	URL:	/api/v1/powerpanel/:panelid
+//	Method:	GET
+//	Params:	panelid
+//	Returns:	Data for panelid
+
+$app->get( '/powerpanel/:panelid', function($panelid) {
+	$pp=new PowerPanel();
+	$pp->PanelID=$panelid;
+
+	if(!$pp->getPanel()){
+		$r['error']=true;
+		$r['errorcode']=404;
+		$r['message']=__("No Powerpanel information found for PanelID ").$panelid;
+	}else{
+		$r['error']=false;
+		$r['errorcode']=200;
+		$r['powerpanel']=$pp;
+	}
+	echoResponse( $r );
+});
 
 
 ?>

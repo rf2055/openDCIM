@@ -81,10 +81,12 @@
 	$rciStats = RCI::GetStatistics( "dc", $dc->DataCenterID );
 	
 	function MakeImageMap($dc){
+		global $config;
+		
 		$mapHTML="";
 	 
 		if(strlen($dc->DrawingFileName)>0){
-			$mapfile="drawings".DIRECTORY_SEPARATOR.$dc->DrawingFileName;
+			$mapfile=$config->ParameterArray["drawingpath"] . $dc->DrawingFileName;
 		   
 			if(file_exists($mapfile)){
 				if(mime_content_type($mapfile)=='image/svg+xml'){
@@ -94,7 +96,7 @@
 				}else{
 					list($width, $height, $type, $attr)=getimagesize($mapfile);
 				}
-				$mapHTML="<div class=\"canvas\" style=\"background-image: url('drawings/$dc->DrawingFileName')\">
+				$mapHTML="<div class=\"canvas\" style=\"background-image: url('".$mapfile."')\">
 	<img src=\"css/blank.gif\" usemap=\"#datacenter\" width=\"$width\" height=\"$height\" alt=\"clearmap over canvas\">
 	<map name=\"datacenter\" data-dc=$dc->DataCenterID data-zoom=1 data-x1=0 data-y1=0>
 	</map>
@@ -109,7 +111,7 @@
 	$width=0;
 	$ie8fix="";
 	if(strlen($dc->DrawingFileName) >0){
-		$mapfile="drawings/$dc->DrawingFileName";
+		$mapfile=$config->ParameterArray["drawingpath"]."$dc->DrawingFileName";
 		if(file_exists($mapfile)){
 			if(mime_content_type($mapfile)=='image/svg+xml'){
 				$svgfile = simplexml_load_file($mapfile);
@@ -136,18 +138,22 @@ $(document).ready(function() {
 		}
 	}
 	// If no mapfile is set then we don't need the buttons to control drawing the map.  Adjust the CSS to hide them and make the heading centered
-	if(strlen($dc->DrawingFileName) <1 || !file_exists("drawings/$dc->DrawingFileName")){
+	if(strlen($dc->DrawingFileName) <1 || !file_exists($config->ParameterArray["drawingpath"].$dc->DrawingFileName)){
 		$screenadjustment="<style type=\"text/css\">.dcstats .heading > div { width: 100% !important;} .dcstats .heading > div + div { display: none; }</style>";
 	}
 		
 	if ( $config->ParameterArray["mUnits"] == "english" ) {
 		$vol = __("Square Feet");
+		$volunit = "ft&sup2;";
 		$tempUnits = "F";
 		$density = __("Watts per Square Foot");
+		$densunit = "W/ft&sup2;";
 	} else {
 		$vol = __("Square Meters");
+		$volunit = "m&sup2;";
 		$tempUnits = "C";
 		$density = __("Watts per Square Meter" );
+		$densunit = "W/m&sup2";
 	}
 	
 ?>
@@ -195,17 +201,17 @@ echo '<div class="main">
   </div>
   <div>
 	<div>',sprintf(__("Total U")." %5d",$dcStats["TotalU"]),'</div>
-	<div>',sprintf("%3d",$dcStats["Infrastructure"]),'</div>
-	<div>',sprintf("%3d",$dcStats["Occupied"]),'</div>
-	<div>',sprintf("%3d",$dcStats["Allocated"]),'</div>
-	<div>',sprintf("%3d",$dcStats["Available"]),'</div>
+	<div align="right">',sprintf("%s",number_format($dcStats["Infrastructure"])),'</div>
+	<div align="right">',sprintf("%s",number_format($dcStats["Occupied"])),'</div>
+	<div align="right">',sprintf("%s",number_format($dcStats["Allocated"])),'</div>
+	<div align="right">',sprintf("%s",number_format($dcStats["Available"])),'</div>
   </div>
   <div>
 	<div>',__("Percentage"),'</div>
-	<div>',(($dcStats["TotalU"])?sprintf("%3.1f%%",$dcStats["Infrastructure"]/$dcStats["TotalU"]*100):"0"),'</div>
-	<div>',(($dcStats["TotalU"])?sprintf("%3.1f%%",$dcStats["Occupied"]/$dcStats["TotalU"]*100):"0"),'</div>
-	<div>',(($dcStats["TotalU"])?sprintf("%3.1f%%",$dcStats["Allocated"]/$dcStats["TotalU"]*100):"0"),'</div>
-	<div>',(($dcStats["TotalU"])?sprintf("%3.1f%%",$dcStats["Available"]/$dcStats["TotalU"]*100):"0"),'</div>
+	<div align="right">',(($dcStats["TotalU"])?sprintf("%s ",number_format($dcStats["Infrastructure"]/$dcStats["TotalU"]*100,1)):"0"),'%</div>
+	<div align="right">',(($dcStats["TotalU"])?sprintf("%s ",number_format($dcStats["Occupied"]/$dcStats["TotalU"]*100,1)):"0"),'%</div>
+	<div align="right">',(($dcStats["TotalU"])?sprintf("%s ",number_format($dcStats["Allocated"]/$dcStats["TotalU"]*100,1)):"0"),'%</div>
+	<div align="right">',(($dcStats["TotalU"])?sprintf("%s ",number_format($dcStats["Available"]/$dcStats["TotalU"]*100,1)):"0"),'%</div>
   </div>
 </div> <!-- END div.table -->
 <div class="table border">
@@ -221,55 +227,55 @@ echo '<div class="main">
 <div class="table border">
   <div>
         <div>',__("Computed Wattage"),'</div>
-        <div>',sprintf("%7d %s", $dcStats["ComputedWatts"], __("Watts")),'</div>
+        <div>',sprintf("%s",number_format($dcStats["ComputedWatts"]/1000)),' kW</div>
   </div>
   <div>
 		<div>',__("Measured Wattage"), '</div>
-		<div>',sprintf("%7d %s", $dcStats["MeasuredWatts"], __("Watts")),'</div>
+		<div>',sprintf("%s",number_format($dcStats["MeasuredWatts"]/1000)),' kW</div>
   </div>
   <div>
-		<div>',__("Design Maximum (kW)"),'</div>
-		<div>',sprintf("%7d kW",$dc->MaxkW ),'</div>
+		<div>',__("Design Maximum"),'</div>
+		<div>',sprintf("%s",number_format($dc->MaxkW)),' kW</div>
   </div>
   <div>
         <div>',__("BTU Computation from Computed Watts"),'</div>
-        <div>',sprintf("%8d ".__("BTU"),$dcStats["ComputedWatts"]*3.412 ),'</div>
+        <div>',sprintf("%s",number_format(($dcStats["ComputedWatts"]*3.412)/1000)),' kBTU</div>
   </div>
   <div>
         <div>',__("Data Center Size"),'</div>
-        <div>',sprintf("%8d %s",$dc->SquareFootage, $vol),'</div>
+        <div>',sprintf("%s %s",number_format($dc->SquareFootage), $volunit),'</div>
   </div>
   <div>
         <div>',$density,'</div>
-        <div>',(($dc->SquareFootage)?sprintf("%8d ".__("Watts"),$dcStats["ComputedWatts"]/$dc->SquareFootage):"0 ".__("Watts")),'</div>
+        <div>',(($dc->SquareFootage)?sprintf("%s",number_format($dcStats["ComputedWatts"]/$dc->SquareFootage)):"0 "),' W</div>
   </div>
   <div>
   	<div>',__("Total Cabinets"),'</div>
-  	<div>',sprintf( "%d", $dcStats["TotalCabinets"] ),'</div>
+  	<div>',sprintf( "%s", number_format($dcStats["TotalCabinets"]) ),'</div>
   </div>
   <div>
         <div>',__("Minimum Cooling Tonnage (Based on Computed Watts)"),'</div>
-        <div>',sprintf("%7d ".__("Tons"),$dcStats["ComputedWatts"]*3.412*1.15/12000),'</div>
+        <div>',sprintf("%s ".__("Tons"), number_format($dcStats["ComputedWatts"]*3.412*1.15/12000)),'</div>
   </div>
   <div>
         <div>',__("Average Temperature"),'</div>
-        <div>',sprintf("%7d %s", $dcStats["AvgTemp"], __("°". $tempUnits)),'</div>
+        <div>',sprintf("%s %s",number_format($dcStats["AvgTemp"]), __("°". $tempUnits)),'</div>
   </div>
   <div>
         <div>',__("Average Humidity"), '</div>
-        <div>',sprintf("%7d %s", $dcStats["AvgHumidity"], __("%")),'</div>
+        <div>',sprintf("%s %s",number_format($dcStats["AvgHumidity"]), __("%")),'</div>
   </div>
   <div>
 		<div>',__("RCI Low Percentage (Overcooling)"), '</div>
-		<div>',(($rciStats["TotalCabinets"])?sprintf("%7d %s",
-					$rciStats["RCILowCount"] / $rciStats["TotalCabinets"] * 100,
+		<div>',(($rciStats["TotalCabinets"])?sprintf("%s %s",
+					number_format($rciStats["RCILowCount"] / $rciStats["TotalCabinets"] * 100),
 		   			__("%")):"0 ".__("%")),
 		'</div>
   </div>
   <div>
 		<div>',__("RCI High Percentage (Cabinets Satisfied)"), '</div>
-		<div>',(($rciStats["TotalCabinets"])?sprintf("%7d %s",
-		   			(1-$rciStats["RCIHighCount"] / $rciStats["TotalCabinets"]) * 100,
+		<div>',(($rciStats["TotalCabinets"])?sprintf("%s %s",
+		   			number_format((1-$rciStats["RCIHighCount"] / $rciStats["TotalCabinets"]) * 100),
 					__("%")):"100 ". __("%")),
 		'</div>
   </div>
@@ -293,7 +299,7 @@ $select="\n\t<select>\n";
 	}
 $select.="\t</select>\n";
 
-echo $select."</div></div>\n".MakeImageMap($dc);
+echo $select."</div></div><br><br>\n<div>".MakeImageMap($dc)."</div>";
 
 echo '
 </div></div>
@@ -367,6 +373,11 @@ echo '
 				},500);
 			}else{
 				var firstcabinet=$('#dc<?php echo $dc->DataCenterID;?> > ul > li:first-child').attr('id');
+				// If we have no children,
+				if (typeof firstcabinet == 'undefined') {
+					// use the 1st-born child of our parent: may, or may not, be us
+					firstcabinet=$('#dc<?php echo $dc->DataCenterID;?> ').attr('id');
+				}
 				expandToItem('datacenters',firstcabinet);
 			}
 		}

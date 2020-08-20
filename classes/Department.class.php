@@ -35,6 +35,13 @@ class Department {
 	var $Classification;
 	var $DeptColor;
 
+	public function __construct($deptid=false){
+		if($deptid){
+			$this->DeptID=$deptid;
+		}
+		return $this;
+	}
+
 	function MakeSafe(){
 		$this->DeptID=intval($this->DeptID);
 		$this->Name=sanitize($this->Name);
@@ -201,11 +208,18 @@ class Department {
 	function GetDeptByName() {
 		$this->MakeSafe();
 
-		$sql="SELECT * FROM fac_Department WHERE Name LIKE \"%$this->Name%\";";
+		$sql="SELECT count(*) as Total, fac_Department.* FROM fac_Department WHERE ucase(Name)=ucase(\"$this->Name\");";
 		if($row=$this->query($sql)->fetch()){
 			foreach(Department::RowToObject($row) as $prop => $value){
-				$this->$prop=$value;
+				if ( $prop != "Total" )
+					$this->$prop=$value;
 			}
+		}
+
+		if ( $row["Total"] == 0 ) {
+			return false;
+		} else {
+			return true;
 		}
 	}
 	function GetDepartmentList() {

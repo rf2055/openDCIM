@@ -4,7 +4,7 @@
 
 	$subheader=__("Data Center Contact Detail");
 
-	if(!$person->SiteAdmin || !$person->ContactAdmin){
+	if(!$person->ContactAdmin){
 		header('Location: '.redirect());
 		exit;
 	}
@@ -46,11 +46,18 @@
 			$userRights->Disabled=(isset($_POST['Disabled']))?1:0;
 
 			if($_POST['action']=='Create'){
-  				$userRights->CreatePerson();
-
-				// We've, hopefully, successfully created a new device. Force them to the new device page.
-				header('Location: '.redirect("usermgr.php?PersonID=$userRights->PersonID"));
-				exit;
+  				if ( $userRights->CreatePerson() ) {
+					// We've, hopefully, successfully created a new device. Force them to the new device page.
+					header('Location: '.redirect("usermgr.php?PersonID=$userRights->PersonID"));
+					exit;
+				} else {
+					// Likely the UserID already exists
+					if ( $userRights->GetPersonByUserID() ) {
+						$status=__("Existing UserID account displayed.");
+					} else {
+						$status=__("Something is broken.   Unable to create Person account.");
+					}
+				}
 			}else{
 				$status=__("Updated");
 				$userRights->UpdatePerson();
@@ -226,7 +233,7 @@ echo '<div class="main">
 
 	foreach($userList as $userRow){
 		if($userRights->PersonID == $userRow->PersonID){$selected='selected';}else{$selected="";}
-		print "<option value=$userRow->PersonID $selected>" . $userRow->LastName . ", " . $userRow->FirstName. "</option>\n";
+		print "<option value=$userRow->PersonID $selected>" . $userRow->LastName . ", " . $userRow->FirstName . " (" . $userRow->UserID . ")" . "</option>\n";
 	}
 
 echo '	</select>&nbsp;&nbsp;<span title="',__("This user is the primary contact for this many devices"),'" id="PrimaryContact"></span></div>

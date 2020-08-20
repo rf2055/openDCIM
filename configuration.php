@@ -14,6 +14,105 @@
 		exit;
 	}
 
+	define("TOOLKIT_PATH", './vendor/onelogin/php-saml/');
+	require_once(TOOLKIT_PATH . '_toolkit_loader.php');
+	require_once( "./saml/settings.php" );
+
+	/*
+	 * Automatic Key/Cert Generation Function for Saml
+	 */
+	if ( isset($_POST["NewSPCert"])) {
+		error_log( "Generating new Key and Certificate for SAML ServiceProvider" );
+
+		$keyConfig = array(
+		    "digest_alg" => "sha512",
+		    "private_key_bits" => 4096,
+		    "private_key_type" => OPENSSL_KEYTYPE_RSA,
+		);
+		   
+		// Create the private and public key
+		$res = openssl_pkey_new($keyConfig);
+
+		// Extract the private key from $res to $privKey
+		openssl_pkey_export($res, $newKey );
+		$retVal["SAMLspprivateKey"] = $newKey;
+
+		// Fill in the DN
+		$dn = array(
+		    "countryName" => $_POST["SAMLCertCountry"] != "" ? $_POST["SAMLCertCountry"]:$config->defaults["SAMLCertCountry"],
+		    "stateOrProvinceName" => $_POST["SAMLCertProvince"] != "" ? $_POST["SAMLCertProvince"]:$config->defaults["SAMLCertProvince"],
+		    "organizationName" => $_POST["SAMLCertOrganization"] != "" ? $_POST["SAMLCertOrganization"]:$config->defaults["SAMLCertOrganization"],
+		    "organizationalUnitName" => "openDCIM",
+		    "commonName" => "openDCIM SP Cert"
+		);
+
+		$req_csr = openssl_csr_new($dn, $req_key);
+		$req_cert = openssl_csr_sign($req_csr, NULL, $req_key, 365);
+
+		openssl_x509_export( $req_cert, $newCert );
+		$retVal["SAMLspx509cert"] = $newCert;
+
+		$data = openssl_x509_parse(str_replace(array("&#13;", "&#10;"), array(chr(13), chr(10)), $newCert));
+		$validTo = date('Y-m-d H:i:s', $data['validTo_time_t']);
+
+		$retVal["SAMLspCertExpiration"] = $validTo;
+
+		echo json_encode($retVal);
+		exit;
+	}
+
+	// Automagically pull down information from the Identity Provider via the metadata if requested
+	if ( isset( $_POST["RefreshMetadata"]) ) {
+		$parser = new OneLogin\Saml2\IdPMetadataParser;
+		error_log( "Downloading new IdP Metadata from " . $_POST["SAMLIdPMetadataURL"]);
+		$IdPSettings = $parser->parseRemoteXML($_POST["SAMLIdPMetadataURL"]);
+
+		$retVal["SAMLidpentityId"] = $IdPSettings['idp']['entityId'];
+		$retVal["SAMLidpx509cert"] = $IdPSettings['idp']['x509cert'];
+		$retVal["SAMLidpslsURL"] = $IdPSettings['idp']['singleLogoutService']['url'];
+		$retVal["SAMLidpssoURL"] = $IdPSettings['idp']['singleSignOnService']['url'];
+		
+		echo json_encode($retVal);
+		exit;
+	}
+
+
+	function BuildDirectoryList($returnjson=false,$path="."){
+		$path=trim($path);
+		# Make sure we don't have any path shenanigans going on
+		$path=str_replace(array("..","./"),"",$path);
+		# we don't need trailing slashes, and leading slashes are going to be invalid paths
+		$path=trim($path,"/");
+		# if path is empty revert to the current directory
+		$path=($path)?$path:'.';
+		$here=@end(explode(DIRECTORY_SEPARATOR,getcwd()));
+		$breadcrumb="<a href=\"?dl=\">$here</a>/";
+		$breadcrumbpath="";
+		if($path!='.'){
+			foreach(explode("/",$path) as $i => $d) {
+				$breadcrumb.="<a href=\"?dl=$breadcrumbpath$d\">$d</a>/";
+				$breadcrumbpath.="$d/";
+			}
+		}
+		$imageselect=__("Current selection").': '.$breadcrumb.'<br><input type="hidden" id="directoryselectionvalue" value="'.$breadcrumbpath.'"><div id="filelist">';
+
+		$directoriesonly=array();
+		$dir=scandir($path);
+		foreach($dir as $i => $f){
+			if(is_dir($path.DIRECTORY_SEPARATOR.$f) && $f!="." && $f!=".." && !preg_match('/^\./', $f)){
+				$imageselect.="<a href=\"?dl=$path/$f\"><span data=\"$breadcrumbpath$f\">$f</span></a><br>\n";
+				$filesonly[]=$f;
+			}
+		}
+		$imageselect.="</div>";
+		if($returnjson){
+			header('Content-Type: application/json');
+			echo json_encode($filesonly);
+		}else{
+			return $imageselect;
+		}
+	}
+
 	function BuildFileList($returnjson=false){
 		$imageselect='<div id="preview"></div><div id="filelist">';
 
@@ -39,6 +138,10 @@
 	}
 
 	// AJAX Requests
+	if(isset($_GET['dl'])){
+		echo BuildDirectoryList(isset($_GET['json']),$_GET['dl']);
+		exit;
+	}
 	if(isset($_GET['fl'])){
 		echo BuildFileList(isset($_GET['json']));
 		exit;
@@ -196,9 +299,11 @@
 				$List=explode(", ",$_REQUEST[$key]);
 				$config->ParameterArray[$key]=$List;
 			}else{
-				$config->ParameterArray[$key]=$_REQUEST[$key];
+				// Not all values are inputs on the screen
+				@$config->ParameterArray[$key]=$_REQUEST[$key];
 			}
 		}
+
 		$config->UpdateConfig();
 
 		//Disable all tooltip items and clear the SortOrder
@@ -236,6 +341,7 @@
 		$i++;
 	}
 
+	$directoryselect=BuildDirectoryList();
 	$imageselect=BuildFileList();
 
 	function formatOffset($offset) {
@@ -418,6 +524,47 @@
   <script type="text/javascript" src="scripts/jquery.validationEngine-en.js"></script>
   <script type="text/javascript" src="scripts/jquery.validationEngine.js"></script>
   <script type="text/javascript">
+	function binddirectoryselection() {
+		$("#directoryselection a").each(function(){
+			$(this).click(function(e){
+				e.preventDefault();
+				$.get(this.href).done(function(data){
+					$("#directoryselection").html(data);
+					binddirectoryselection();
+				});
+			});
+		});
+	}
+
+	// fix this to trigger after the drawing path has been updated
+	function rebuildcache(){
+		$('<div>').append($('<iframe>').attr('src','build_image_cache.php').css({'max-width':'600px','max-height':'400px','min-height':'300px','align':'middle'})).attr('title','Rebuild device image cache').dialog({
+			width: 'auto',
+			modal: true,
+			open: function(e){
+				thismodal=this;
+				timer = setInterval( function() {
+					$.ajax({
+						type: 'GET',
+						url: 'scripts/ajax_progress.php',
+						dataType: 'json',
+						success: function(data) {
+							if ( data.Percentage >= 100 ) {
+								clearInterval(timer);
+								// wait 5 seconds after the rebuild completes and autoclose this dialog
+								timer = setInterval( function() {
+									$(thismodal).dialog('destroy');
+									clearInterval(timer);
+								}, 5000 );
+								// Reload with Stage 3 to send the file to the user
+							}
+						}
+					})
+				}, 1500 );
+			}
+		});
+	};
+	
 	$(document).ready(function(){
 		// ToolTips
 		$('#tooltip, #cdutooltip').multiselect();
@@ -425,6 +572,49 @@
 			if($(this).attr('data')){
 				$(this).val($(this).attr('data'));
 			}
+		});
+
+		// Generate SP Cert
+
+		$('#btn_spcert').click(function(e) {
+			e.preventDefault();
+
+			var formdata=$('#spcertinfo').serializeArray();
+			formdata.push({name: "NewSPCert", value: "1"});
+			$.post( 'configuration.php', formdata, function(data) {
+				var obj=JSON.parse(data);
+				$('#SAMLspprivateKey').val(obj.SAMLspprivateKey);
+				$('#SAMLspx509cert').val(obj.SAMLspx509cert);
+				$('#SPCertExpiration').val(obj.SAMLspCertExpiration);
+			} )
+		});
+
+		// Get IdP Metadata
+
+		$('#btn_refreshidpmetadata').click(function(e) {
+			e.preventDefault();
+
+			var formdata=$('#idpinfo').serializeArray();
+			formdata.push({name: "RefreshMetadata", value: "1"});
+			$.post( 'configuration.php', formdata, function(data) {
+				var obj=JSON.parse(data);
+				$('#SAMLidpssoURL').val(obj.SAMLidpssoURL);
+				$('#SAMLidpslsURL').val(obj.SAMLidpslsURL);
+				$('#SAMLidpentityId').val(obj.SAMLidpentityId);
+				$('#SAMLidpx509cert').val(obj.SAMLidpx509cert);
+			} )
+		});
+
+
+		// Email test
+		$('#btn_smtptest').click(function(e) {
+			e.preventDefault();
+
+			var formdata=$('#smtpblock').serializeArray();
+			$.post( 'scripts/testemail.php', formdata, function(data) {
+				$('#smtptest > div').html(data);
+				$('#smtptest').dialog({minWidth: 850, position: { my: "center", at: "top", of: window },closeOnEscape: true });
+			});
 		});
 
 		// Applies to everything
@@ -448,7 +638,19 @@
 		$("#configtabs button").each(function(){
 			var a = $(this).parent().prev().find('input,select');
 			$(this).click(function(){
-				a.val($(this).parent().next().children('span').text());
+				
+				var value_to_set = $(this).parent().next().children('span').text();
+
+				// Only for selects, try to assign an existing option, so to avoid to default to an empty value that cannot be saved
+				if (a.is("select")){
+					a.find('option').each(function (){
+						if ($(this).val().toLowerCase() === value_to_set.toLowerCase()){
+							value_to_set = $(this).val();
+						}
+					});
+				}
+				a.val(value_to_set).trigger('change');
+
 				if(a.hasClass('color-picker')){
 					a.minicolors('value', $(this).parent().next().children('span').text()).trigger('change');
 				}
@@ -546,6 +748,40 @@
 			.focus(function(){$(this).attr('type','text');})
 			.blur(function(){$(this).attr('type','password');});
 
+		// General - Site Specific Paths
+
+		$('#drawingpath, #picturepath, #reportspath').click(function(){
+			var input=this;
+			var originalvalue=this.value;
+			$.get('',{dl: this.value}).done(function(data){
+				$("#directoryselection").html(data);
+				$("#directoryselection").dialog({
+					resizable: false,
+					height:500,
+					width: 670,
+					modal: true,
+					buttons: {
+	<?php echo '					',__("Select"),': function() {'; ?>
+							input.value=$('#directoryselectionvalue').val();
+							$(input).trigger('change');
+							$(this).dialog("destroy");
+						}
+					},
+					close: function(){
+							// they clicked the x, set the value back if something was uploaded
+							input.value=originalvalue;
+							$(this).dialog("destroy");
+						}
+				}).data('input',input);
+				binddirectoryselection();
+			});
+		}).on('change',function(e){
+			if(e.currentTarget.id=='picturepath'){
+				window.picturepathupdated=true;
+			}
+			$(".main form").validationEngine('validate');
+		});
+
 		// General - Time and Measurements
 
 		$("#tzmenu").menu();
@@ -600,7 +836,7 @@
 										$(this).remove();
 									});
 								}else{ // failed to delete
-									$('#modaltext').html('AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>');
+									$('#modaltext').html("AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>");
 									$('#modal').dialog('option','buttons',cancelbutton);
 								}
 							});
@@ -616,7 +852,7 @@
 										$(this).remove();
 									});
 								}else{ // failed to delete
-									$('#modaltext').html('AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>');
+									$('#modaltext').html("AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>");
 									$('#modal').dialog('option','buttons',cancelbutton);
 								}
 							});
@@ -653,7 +889,6 @@
 			});
 
 			$('.main form').validationEngine();
-
 		}
 
 		var blankmediarow=$('<div />').html('<div><img src="images/del.gif"></div><div><input id="mediatype[]" name="mediatype[]" type="text"></div><div><select name="mediacolorcode[]"></select></div>');
@@ -791,7 +1026,7 @@
 											$(this).remove();
 										});
 									}else{ // failed to delete
-										$('#modaltext').html('AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>');
+										$('#modaltext').html("AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>");
 										$('#modal').dialog('option','buttons',cancelbutton);
 									}
 								});
@@ -812,7 +1047,7 @@
 										// color so they will display the new color
 										$('#mediatypes > div ~ div:not(:last-child) input').val('').change();
 									}else{ // failed to delete
-										$('#modaltext').html('AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>');
+										$('#modaltext').html("AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>");
 										$('#modal').dialog('option','buttons',cancelbutton);
 									}
 								});
@@ -1035,7 +1270,7 @@
 										$(this).dialog("destroy");
 									}
 								}
-								<?php echo "				var modal=$('<div />', {id: 'modal', title: '".__("Custom Device Attribute Type Change Error")."'}).html('<div id=\"modaltext\">AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br>".__("Something just went horribly wrong.")."</div>').dialog({"; ?>
+								<?php echo "				var modal=$('<div />', {id: 'modal', title: \"".__("Custom Device Attribute Type Change Error")."\"}).html(\"<div id=\\\"modaltext\\\">AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br>".__("Something just went horribly wrong.")."</div>\").dialog({"; ?>
 								dialogClass: 'no-close',
 								appendTo: 'body',
 								modal: true,
@@ -1049,7 +1284,7 @@
 												$('#modal').dialog("destroy");
 												processChange();
 											}else{ // failed to delete
-												$('#modaltext').html('AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>');
+												$('#modaltext').html("AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>");
 												$('#modal').dialog('option','buttons',cancelbutton);
 												revertdefault(row,true);
 											}
@@ -1062,7 +1297,7 @@
 										$(this).dialog("destroy");
 									}
 								}
-								<?php echo "				var modal=$('<div />', {id: 'modal', title: '".__("Custom Device Attribute Type Change Override")."'}).html('<div id=\"modaltext\">".__("This custom device attribute is in use somewhere. If you choose to change the attribute type, it will be cleared from all devices and device templates.")."</div>').dialog({"; ?>
+								<?php echo "				var modal=$('<div />', {id: 'modal', title: \"".__("Custom Device Attribute Type Change Override")."\"}).html(\"<div id=\\\"modaltext\\\">".__("This custom device attribute is in use somewhere. If you choose to change the attribute type, it will be cleared from all devices and device templates.")."</div>\").dialog({"; ?>
 								dialogClass: 'no-close',
 								appendTo: 'body',
 								modal: true,
@@ -1148,7 +1383,7 @@
 							$(this).dialog("destroy");
 						}
 					}
-<?php echo "				var modal=$('<div />', {id: 'modal', title: '".__("Custom Device Attribute Delete Error")."'}).html('<div id=\"modaltext\">AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br>".__("Something just went horribly wrong.")."</div>').dialog({"; ?>
+<?php echo "				var modal=$('<div />', {id: 'modal', title: \"".__("Custom Device Attribute Delete Error")."\"}).html(\"<div id=\\\"modaltext\\\">AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br>".__("Something just went horribly wrong.")."</div>\").dialog({"; ?>
 					dialogClass: 'no-close',
 					appendTo: 'body',
 					modal: true,
@@ -1165,7 +1400,7 @@
 										$(this).remove();
 									});
 								}else{ // failed to delete
-									$('#modaltext').html('AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>');
+									$('#modaltext').html("AAAAAAAAAAHHHHHHHHHH!!!  *crash* *fire* *chaos*<br><br><?php echo __("Something just went horribly wrong."); ?>");
 									$('#modal').dialog('option','buttons',cancelbutton);
 								}
 							});
@@ -1176,7 +1411,7 @@
 							$(this).dialog("destroy");
 						}
 					}
-<?php echo "				var modal=$('<div />', {id: 'modal', title: '".__("Custom Device Attribute Delete Override")."'}).html('<div id=\"modaltext\">".__("This custom device attribute is in use somewhere. If you choose to delete the attribute, it will be removed from all devices and device templates.")."</div>').dialog({"; ?>
+<?php echo "				var modal=$('<div />', {id: 'modal', title: \"".__("Custom Device Attribute Delete Override")."\"}).html(\"<div id=\\\"modaltext\\\">".__("This custom device attribute is in use somewhere. If you choose to delete the attribute, it will be removed from all devices and device templates.")."</div>\").dialog({"; ?>
 					dialogClass: 'no-close',
 					appendTo: 'body',
 					modal: true,
@@ -1369,16 +1604,31 @@
 
 		// Convert this bitch over to an ajax form submit
 		$('button[name="action"]').click(function(e){
-			// Clear the messages blank
-			$('#messages').text('');
-			// Don't let this button do a real form submit
-			e.preventDefault();
-			// Collect the config data
-			var formdata=$(".main form").serializeArray();
-			// Set the action of the form to Update
-			formdata.push({name:'action',value:"Update"});
-			// Post the config data then update the status message
-			$.post('',formdata).done(function(){$('#messages').text('Updated');}).error(function(){$('#messages').text('Something is broken');});
+			if($(".main form").validationEngine('validate')){
+				// Clear the messages blank
+				$('#messages').text('');
+				// Don't let this button do a real form submit
+				e.preventDefault();
+				// Collect the config data
+				var formdata=$(".main form").serializeArray();
+				// Set the action of the form to Update
+				formdata.push({name:'action',value:"Update"});
+				// Post the config data then update the status message
+				$.post('',formdata).done(function(){
+						$('#messages').text('Updated');
+						if(typeof(window.picturepathupdated)==="boolean"){
+							if(window.picturepathupdated){
+								$('#messages').text("<?php echo __("Verify directory rights");?>");
+								$('a[href=#preflight]').trigger('click');
+								window.scrollTo(0,0);
+								rebuildcache();
+								window.picturepathupdated=false;
+							}
+						}
+					}).error(function(){
+						$('#messages').text('Something is broken');
+					});
+			}
 		});
 
 		$('.main form').submit(function(e){
@@ -1472,6 +1722,7 @@
 			}
 		});
 	}
+
   </script>
 </head>
 <body>
@@ -1496,6 +1747,7 @@ echo '<div class="main">
 			<li><a href="#tt">',__("ToolTips"),'</a></li>
 			<li><a href="#cc">',__("Cabling"),'</a></li>
 			<li><a href="#dca">',__("Custom Device Attributes"),'</a></li>
+			<li><a href="#mappers">',__("Attribute Mapping"),'</a></li>
 			<li><a href="#ldap">',__("LDAP"),'</a></li>
 			<li><a href="#saml">',__("SAML"),'</a></li>
 			<li><a href="#preflight">',__("Pre-Flight Check"),'</a></li>
@@ -1515,11 +1767,35 @@ echo '<div class="main">
 					<div><input type="text" defaultvalue="',$config->defaults["DefaultPanelVoltage"],'" name="DefaultPanelVoltage" value="',$config->ParameterArray["DefaultPanelVoltage"],'"></div>
 				</div>
 			</div> <!-- end table -->
+			<h3>',__("Site Specific Paths"),'</h3>
+			<div id="directoryselection" title="Image file directory selector">
+				',$directoryselect,'
+			</div>
+			<div class="table" id="sitepaths">
+				<div>
+					<div><label for="drawingpath">',__("Relative path for Drawings"),'</label></div>
+					<div><input type="text" id="drawingpath" defaultvalue="',$config->defaults["drawingpath"],'" name="drawingpath" value="',$config->ParameterArray["drawingpath"],'" class="validate[required,custom[endWithSlashConfigurationPage]]"></div>
+				</div>
+				<div>
+					<div><label for="picturepath">',__("Relative path for Pictures"),'</label></div>
+					<div><input type="text" id="picturepath" defaultvalue="',$config->defaults["picturepath"],'" name="picturepath" value="',$config->ParameterArray["picturepath"],'" class="validate[required,custom[endWithSlashConfigurationPage]]">
+					</div>
+				</div>
+				<div>
+					<div><label for="reportspath">',__("Relative path for Local/Custom Reports"),'</label></div>
+					<div><input type="text" id="reportspath" defaultvalue="',$config->defaults["reportspath"],'" name="reportspath" value="',$config->ParameterArray["reportspath"],'" class="validate[required,custom[endWithSlashConfigurationPage]]">
+					</div>
+				</div>
+			</div> <!-- end table -->			
 			<h3>',__("Time and Measurements"),'</h3>
 			<div class="table" id="timeandmeasurements">
 				<div>
 					<div><label for="timezone">',__("Time Zone"),'</label></div>
 					<div><input type="text" readonly="readonly" id="timezone" defaultvalue="',$config->defaults["timezone"],'" name="timezone" value="',$config->ParameterArray["timezone"],'"></div>
+				</div>
+				<div>
+					<div><label for="logretention">',__("Log Retention (Days)"),'</label></div>
+					<div><input type="text" defaultvalue="',$config->defaults["logretention"],'" name="logretention" value="',$config->ParameterArray["logretention"],'"></div>
 				</div>
 				<div>
 					<div><label for="mDate">',__("Manufacture Date"),'</label></div>
@@ -1627,11 +1903,14 @@ echo '<div class="main">
 					<div><input type="text" defaultvalue="',$config->defaults["RCILow"],'" name="RCILow" value="',$config->ParameterArray["RCILow"],'"></div>
 				</div>
 			</div> <!-- end table -->
-			<h3>',__("Virtual Machines"),'</h3>
+			<h3>',__("Expirations"),'</h3>
 			<div class="table" id="rackusage">
 				<div>
-					<div><label for="VMExpirationTime">',__("Expiration Time (Days)"),'</label></div>
+					<div><label for="VMExpirationTime">',__("Unseen Virtual Machines (Days)"),'</label></div>
 					<div><input type="text" defaultvalue="',$config->defaults["VMExpirationTime"],'" name="VMExpirationTime" value="',$config->ParameterArray["VMExpirationTime"],'"></div>
+					<div></div>
+					<div><label for="ReservationExpiration">',__("Uninstalled Reservations (Days)"),'</label></div>
+					<div><input type="text" defaultValue="',$config->defaults["ReservationExpiration"],'" name="ReservationExpiration" value="',$config->ParameterArray["ReservationExpiration"],'"></div>
 				</div>
 			</div> <!-- end table -->
 			',$tzmenu,'
@@ -1669,6 +1948,14 @@ echo '<div class="main">
 					</div>
 				</div>
 				<div>
+					<div><label for="RackRequestsActions">',__("Rack Requests Actions"),'</label></div>
+					<div><select id="RackRequestsActions" name="RackRequestsActions" defaultvalue="',$config->defaults["RackRequestsActions"],'" data="',$config->ParameterArray["RackRequestsActions"],'">
+							<option value="disabled">',__("Disabled"),'</option>
+							<option value="enabled">',__("Enabled"),'</option>
+						</select>
+					</div>
+				</div>
+				<div>
 					<div><label for="MailSubject">',__("Mail Subject"),'</label></div>
 					<div><input type="text" defaultvalue="',$config->defaults["MailSubject"],'" name="MailSubject" value="',$config->ParameterArray["MailSubject"],'"></div>
 				</div>
@@ -1682,24 +1969,8 @@ echo '<div class="main">
 				</div>
 			</div> <!-- end table -->
 			<h3>',__("Online Repository"),'</h3>
-			<h5><u>',__("Default Behavior for Site (Can Override Per Template)"),'</u></h5>
+			<h5>',__("UserID and Key are not needed to pull from the repository, only to send."),'</h5>
 			<div class="table" id="repository">
-				<div>
-					<div><label for="ShareToRepo">',__("Share your templates to the repository"),'</label></div>
-					<div><select name="ShareToRepo" id="ShareToRepo" defaultvalue="',$config->defaults["ShareToRepo"],'" data="',$config->ParameterArray["ShareToRepo"],'">
-						<option value="disabled">',__("Disabled"),'</option>
-						<option value="enabled">',__("Enabled"),'</option>
-						</select>
-					</div>
-				</div>
-				<div>
-					<div><label for="keep_local">',__("Keep local values when synchronizing"),'</label></div>
-					<div><select name="KeepLocal" id="KeepLocal" defaultvalue="',$config->defaults["KeepLocal"],'" data="',$config->ParameterArray["KeepLocal"],'">
-						<option value="disabled">',__("Disabled"),'</option>
-						<option value="enabled">',__("Enabled"),'</option>
-						</select>
-					</div>
-				</div>
 				<div>
 					<div><label for="APIUserID">',__("API UserID"),'</label></div>
 					<div><input type="text" defaultvalue="',$config->defaults["APIUserID"],'" name="APIUserID" value="',$config->ParameterArray["APIUserID"],'"></div>
@@ -1790,6 +2061,18 @@ echo '<div class="main">
 						</select>
 					</div>
 				</div>
+                                 <div>
+					<div><label for="AssignCabinetLabels">',__("Which Cabinet Label?"),'</label></div>
+					<div><select id="AssignCabinetLabels" name="AssignCabinetLabels" defaultvalue="',$config->defaults["AssignCabinetLabels"],'" data="',$config->ParameterArray["AssignCabinetLabels"],'">
+
+							<option value="Location">',__("Location"),'</option>
+							<option value="OwnerName">',__("Owner Name"),'</option>
+							<option value="KeyLockInformation">',__("Key Lock Information"),'</option>
+							<option value="ModelNo">',__("Model No"),'</option> 
+						</select>
+					</div>
+				</div>
+				
 			</div> <!-- end table -->
 			<h3>',__("Site"),'</h3>
 			<div class="table">
@@ -1820,6 +2103,7 @@ echo '<div class="main">
 			</div> <!-- end table -->
 		</div>
 		<div id="email">
+		    <fieldset id="smtpblock">
 			<div class="table">
 				<div>
 					<div><label for="SMTPServer">',__("SMTP Server"),'</label></div>
@@ -1857,7 +2141,31 @@ echo '<div class="main">
 					<div><label for="FacMgrMail">',__("Facility Manager Email"),'</label></div>
 					<div><input type="text" defaultvalue="',$config->defaults["FacMgrMail"],'" name="FacMgrMail" value="',$config->ParameterArray["FacMgrMail"],'"></div>
 				</div>
+				<div>
+					<div></div>
+					<div><button type="button" id="btn_smtptest" style="display; inline-block">',__("Test Settings"),'</button></div>
+				</div>
+				<div id="smtptest" title="Testing SMTP Communications"><div></div></div>
 			</div> <!-- end table -->
+			</fieldset>
+			<div class="table">
+				<div>
+					<div><label for="PowerAlertsEmail">',__("Email Alerts on Power Poll"),'</label></div>
+					<div><select id="PowerAlertsEmail" name="PowerAlertsEmail" defaultvalue="',$config->defaults["PowerAlertsEmail"],'" data="',$config->ParameterArray["PowerAlertsEmail"],'">
+							<option value="disabled">',__("Disabled"),'</option>
+							<option value="enabled">',__("Enabled"),'</option>
+						</select>
+					</div>
+				</div>
+				<div>
+					<div><label for="SensorAlertsEmail">',__("Email Alerts on Sensor Poll"),'</label></div>
+					<div><select id="SensorAlertsEmail" name="SensorAlertsEmail" defaultvalue="',$config->defaults["SensorAlertsEmail"],'" data="',$config->ParameterArray["SensorAlertsEmail"],'">
+							<option value="disabled">',__("Disabled"),'</option>
+							<option value="enabled">',__("Enabled"),'</option>
+						</select>
+					</div>
+				</div>
+			</div>
 		</div>
 		<div id="reporting">
 			<div id="imageselection" title="Image file selector">
@@ -2108,36 +2416,40 @@ echo '<div class="main">
 				</div>
 			</div>
 		</div>
-		<div id="ldap">
-			<h3>',__("LDAP Authentication and Authorization Configuration"),'</h3>
+		<div id="mappers">
+			<h3>',__("LDAP or SAML Attribute Mapping"),'</h3>
 			<div class="table">
 				<div>
-					<div><label for="LDAPServer">',__("LDAP Server URI"),'</label></div>
-					<div><input type="text" defaultvalue="',$config->defaults["LDAPServer"],'" name="LDAPServer" value="',$config->ParameterArray["LDAPServer"],'"></div>
+					<div><label for="AttrFirstName">',__("FirstName"),'</label></div>
+					<div><input type="text" size="40" defaultvalue="',$config->defaults["AttrFirstName"],'" name="AttrFirstName" value="',$config->ParameterArray["AttrFirstName"],'"></div>
 				</div>
 				<div>
-					<div><label for="LDAPBaseDN">',__("Base DN"),'</label></div>
-					<div><input type="text" defaultvalue="',$config->defaults["LDAPBaseDN"],'" name="LDAPBaseDN" value="',$config->ParameterArray["LDAPBaseDN"],'"></div>
+					<div><label for="AttrLastName">',__("Last Name"),'</label></div>
+					<div><input type="text" size="40" defaultvalue="',$config->defaults["AttrLastName"],'" name="AttrLastName" value="',$config->ParameterArray["AttrLastName"],'"></div>
 				</div>
 				<div>
-					<div><label for="LDAPBaseSearch">',__("Base Search"),'</label></div>
-					<div><input type="text" defaultvalue="',$config->defaults["LDAPBaseSearch"],'" name="LDAPBaseSearch" value="',$config->ParameterArray["LDAPBaseSearch"],'"></div>
+					<div><label for="AttrEmail">',__("Email"),'</label></div>
+					<div><input type="text" size="40" defaultvalue="',$config->defaults["AttrEmail"],'" name="AttrEmail" value="',$config->ParameterArray["AttrEmail"],'"></div>
 				</div>
 				<div>
-					<div><label for="LDAPBindDN">',__("Bind DN"),'</label></div>
-					<div><input type="text" defaultvalue="',$config->defaults["LDAPBindDN"],'" name="LDAPBindDN" value="',$config->ParameterArray["LDAPBindDN"],'"></div>
+					<div><label for="AttrPhone1">',__("Phone1"),'</label></div>
+					<div><input type="text" size="40" defaultvalue="',$config->defaults["AttrPhone1"],'" name="AttrPhone1" value="',$config->ParameterArray["AttrPhone1"],'"></div>
 				</div>
 				<div>
-					<div><label for="LDAPUserSearch">',__("User Search"),'</label></div>
-					<div><input type="text" defaultvalue="',$config->defaults["LDAPUserSearch"],'" name="LDAPUserSearch" value="',$config->ParameterArray["LDAPUserSearch"],'"></div>
+					<div><label for="AttrPhone2">',__("Phone2"),'</label></div>
+					<div><input type="text" size="40" defaultvalue="',$config->defaults["AttrPhone2"],'" name="AttrPhone2" value="',$config->ParameterArray["AttrPhone2"],'"></div>
 				</div>
 				<div>
-					<div><label for="LDAPSessionExpiration">',__("LDAP Session Expiration (Seconds)"),'</label></div>
-			<div><input type="text" defaultvalue="',$config->defaults["LDAPSessionExpiration"],'" name="LDAPSessionExpiration" value="',$config->ParameterArray["LDAPSessionExpiration"],'"></div>
-		</div>
+					<div><label for="AttrPhone3">',__("Phone3"),'</label></div>
+					<div><input type="text" size="40" defaultvalue="',$config->defaults["AttrPhone3"],'" name="AttrPhone3" value="',$config->ParameterArray["AttrPhone3"],'"></div>
+				</div>
 			</div>
-			<h3>',__("Group Distinguished Names"),'</h3>
+			<h3>',__("Group Mapping"),'</h3>
 			<div class="table">
+				<div>
+					<div><label for="SAMLGroupAttribute">',__("SAML Attribute containing Groups"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLGroupAttribute"],'" name="SAMLGroupAttribute" value="',$config->ParameterArray["SAMLGroupAttribute"],'"></div>
+				</div>
 				<div>
 					<div><label for="LDAPSiteAccess">',__("Site Access"),'</label></div>
 					<div><input type="text" size="60" defaultvalue="',$config->defaults["LDAPSiteAccess"],'" name="LDAPSiteAccess" value="',$config->ParameterArray["LDAPSiteAccess"],'"></div>
@@ -2179,27 +2491,51 @@ echo '<div class="main">
 					<div><input type="text" size="60" defaultvalue="',$config->defaults["LDAPSiteAdmin"],'" name="LDAPSiteAdmin" value="',$config->ParameterArray["LDAPSiteAdmin"],'"></div>
 				</div>
 			</div>
-
+		</div>
+		<div id="ldap">
+			<h3>',__("LDAP Authentication and Authorization Configuration"),'</h3>
+			<div class="table">
+				<div>
+					<div><label for="LDAPServer">',__("LDAP Server URI"),'</label></div>
+					<div><input type="text" defaultvalue="',$config->defaults["LDAPServer"],'" name="LDAPServer" value="',$config->ParameterArray["LDAPServer"],'"></div>
+				</div>
+				<div>
+					<div><label for="LDAPBaseDN">',__("Base DN"),'</label></div>
+					<div><input type="text" defaultvalue="',$config->defaults["LDAPBaseDN"],'" name="LDAPBaseDN" value="',$config->ParameterArray["LDAPBaseDN"],'"></div>
+				</div>
+				<div>
+					<div><label for="LDAPBaseSearch">',__("Base Search"),'</label></div>
+					<div><input type="text" defaultvalue="',$config->defaults["LDAPBaseSearch"],'" name="LDAPBaseSearch" value="',$config->ParameterArray["LDAPBaseSearch"],'" title="',__("Leave blank for Active Directory"),'"></div>
+				</div>
+				<div>
+					<div><label for="LDAPBindDN">',__("Bind DN"),'</label></div>
+					<div><input type="text" defaultvalue="',$config->defaults["LDAPBindDN"],'" name="LDAPBindDN" value="',$config->ParameterArray["LDAPBindDN"],'" title="%userid%@opendcim.org for Active Directory"></div>
+				</div>
+				<div>
+					<div><label for="LDAPUserSearch">',__("User Search"),'</label></div>
+					<div><input type="text" defaultvalue="',$config->defaults["LDAPUserSearch"],'" name="LDAPUserSearch" value="',$config->ParameterArray["LDAPUserSearch"],'"></div>
+				</div>
+				<div>
+					<div><label for="LDAPSessionExpiration">',__("LDAP Session Expiration (Seconds)"),'</label></div>
+					<div><input type="text" defaultvalue="',$config->defaults["LDAPSessionExpiration"],'" name="LDAPSessionExpiration" value="',$config->ParameterArray["LDAPSessionExpiration"],'"></div>
+				</div>
+				<div>
+					<div><label for="LDAPDebug">',__("LDAP Debugging"),'</label></div>
+					<div><select id="LDAPDebug" name="LDAPDebug" defaultValue="',$config->defaults["LDAPDebug"],'" data="', $config->ParameterArray["LDAPDebug"],'">
+							<option value="disabled">',__("Disabled"),'</option>
+							<option value="enabled">',__("Enabled"),'</option>
+						</select>
+					</div>
+				</div>
+				<div>
+					<div><label for="LDAP_Debug_Password">',__("Emergency Bypass Password"),'</label></div>
+					<div><input type="password" defaultvalue="',$config->defaults["LDAP_Debug_Password"],'" name="LDAP_Debug_Password" value="',$config->ParameterArray["LDAP_Debug_Password"],'"></div>
+				</div>
+			</div>
 		</div>
 			<div id="saml">
 			<h3>',__("SAML Authentication Configuration"),'</h3>
 			<div class="table">
-				<div>
-					<div><label for="SAMLStrict">',__("Strict"),'</label></div>
-					<div><select id="SAMLStrict" name="SAMLStrict" defaultValue="',$config->defaults["SAMLStrict"],'" data="', $config->ParameterArray["SAMLStrict"],'">
-							<option value="disabled">',__("Disabled"),'</option>
-							<option value="enabled">',__("Enabled"),'</option>
-						</select>
-					</div>
-				</div>
-				<div>
-					<div><label for="SAMLDebug">',__("Debug"),'</label></div>
-				<div><select id="SAMLDebug" name="SAMLDebug" defaultValue="',$config->defaults["SAMLDebug"],'" data="', $config->ParameterArray["SAMLDebug"],'">
-							<option value="disabled">',__("Disabled"),'</option>
-							<option value="enabled">',__("Enabled"),'</option>
-						</select>
-					</div>
-				</div>
 				<div>
 					<div><label for="SAMLBaseURL">',__("Base URL"),'</label></div>
 					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLBaseURL"],'" name="SAMLBaseURL" value="',$config->ParameterArray["SAMLBaseURL"],'"></div>
@@ -2213,34 +2549,63 @@ echo '<div class="main">
 					</div>
 				</div>
 			</div>
-			<h3>',__("SAML Service Provider Configuration"),'</h3>
+			<h3>',__("SAML SP Information and Certificate Generation"),'</h3>
+			<fieldset id="spcertinfo">
 			<div class="table">
 				<div>
 					<div><label for="SAMLspentityId">',__("Entity ID"),'</label></div>
 					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLspentityId"],'" name="SAMLspentityId" value="',$config->ParameterArray["SAMLspentityId"],'"></div>
 				</div>
 				<div>
-					<div><label for="SAMLspacsURL">',__("ACS URL"),'</label></div>
-					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLspacsURL"],'" name="SAMLspacsURL" value="',$config->ParameterArray["SAMLspacsURL"],'"></div>
+					<div><label for="SAMLCertCountry">',__("Country (2 Character)"),'</label></div>
+					<div><input type="text" size="3" defaultvalue="',$config->defaults["SAMLCertCountry"],'" name="SAMLCertCountry" value="',$config->ParameterArray["SAMLCertCountry"],'"></div>
 				</div>
 				<div>
-					<div><label for="SAMLspslsURL">',__("SLS URL"),'</label></div>
-					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLspslsURL"],'" name="SAMLspslsURL" value="',$config->ParameterArray["SAMLspslsURL"],'"></div>
+					<div><label for="SAMLCertProvince">',__("State or Province"),'</label></div>
+					<div><input type="text" size="3" defaultvalue="',$config->defaults["SAMLCertProvince"],'" name="SAMLCertProvince" value="',$config->ParameterArray["SAMLCertProvince"],'"></div>
 				</div>
 				<div>
-					<div><label for="SAMLspx509cert">',__("x509 Certificate"),'</label></div>
-					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLspx509cert"],'" name="SAMLspx509cert" value="',$config->ParameterArray["SAMLspx509cert"],'"></div>
+					<div><label for="SAMLCertOrganization">',__("Organization"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLCertOrganization"],'" name="SAMLCertOrganization" value="',$config->ParameterArray["SAMLCertOrganization"],'"></div>
+				</div>';
+ 			if ( $config->ParameterArray["SAMLspx509cert"] != "" ) {
+ 				$data = openssl_x509_parse(str_replace(array("&#13;", "&#10;"), array(chr(13), chr(10)), $config->ParameterArray["SAMLspx509cert"]));
+
+				$validFrom = date('Y-m-d H:i:s', $data['validFrom_time_t']);
+				$validTo = date('Y-m-d H:i:s', $data['validTo_time_t']);
+			} else {
+				$validTo = "No Certificate";
+			}	
+
+			echo '<div>
+					<div>',__("Certificate Expiration"),'</div>
+					<div><input type="text" size="20" id="SPCertExpiration" name="SPCertExpiration" readonly value="',$validTo,'"></div>
 				</div>
 				<div>
-					<div><label for="SAMLspprivateKey">',__("Private Key"),'</label></div>
-					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLspprivateKey"],'" name="SAMLspprivateKey" value="',$config->ParameterArray["SAMLspprivateKey"],'"></div>
+					<div>',__("SP Private Key"),'</div>
+					<div><textarea cols="60" rows="10" id="SAMLspprivateKey" name="SAMLspprivateKey">', $config->ParameterArray["SAMLspprivateKey"], '</textarea></div>
+				</div>
+				<div>
+					<div>',__("SP x509 Certificate"),'</div>
+					<div><textarea cols="60" rows="10" id="SAMLspx509cert" name="SAMLspx509cert">', $config->ParameterArray["SAMLspx509cert"], '</textarea></div>
+				</div>
+ 				<div>
+ 					<div><label for="SAMLGenNewCert"></label></div>
+					<div><div><button type="button" id="btn_spcert" style="display; inline-block">',__("Generate/Renew Certificate"),'</button></div>
+					</div>
 				</div>
 			</div>
+			</fieldset>
 			<h3>',__("SAML Identity Provider Configuration"),'</h3>
+			<fieldset id="idpinfo">
 			<div class="table">
 				<div>
-					<div><label for="SAMLidpentityId">',__("Entity ID"),'</label></div>
+					<div><label for="SAMLidpentityId">',__("IdP entityId"),'</label></div>
 					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLidpentityId"],'" name="SAMLidpentityId" value="',$config->ParameterArray["SAMLidpentityId"],'"></div>
+				</div>
+				<div>
+					<div><label for="SAMLIdPMetadataURL">',__("IdP Metadata URL"),'</label></div>
+					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLIdPMetadataURL"],'" name="SAMLIdPMetadataURL" value="',$config->ParameterArray["SAMLIdPMetadataURL"],'"></div>
 				</div>
 				<div>
 					<div><label for="SAMLidpssoURL">',__("SSO URL"),'</label></div>
@@ -2251,14 +2616,16 @@ echo '<div class="main">
 					<div><input type="text" size="60" defaultvalue="',$config->defaults["SAMLidpslsURL"],'" name="SAMLidpslsURL" value="',$config->ParameterArray["SAMLidpslsURL"],'"></div>
 				</div>
 				<div>
-					<div><label for="SAMLidpcertFingerprint">',__("Certificate Fingerprint"),'</label></div>
-					<div><input type="text" size="50" defaultvalue="',$config->defaults["SAMLidpcertFingerprint"],'" name="SAMLidpcertFingerprint" value="',$config->ParameterArray["SAMLidpcertFingerprint"],'"></div>
+					<div>',__("IdP x509 Certificate"),'</div>
+					<div><textarea cols="60" rows="10" id="SAMLidpx509cert" name="SAMLidpx509cert">', $config->ParameterArray["SAMLidpx509cert"], '</textarea></div>
 				</div>
 				<div>
-					<div><label for="SAMLidpcertFingerprintAlgorithm">',__("Certificate Fingerprint Algorithm"),'</label></div>
-					<div><input type="text" size="20" defaultvalue="',$config->defaults["SAMLidpcertFingerprintAlgorithm"],'" name="SAMLidpcertFingerprintAlgorithm" value="',$config->ParameterArray["SAMLidpcertFingerprintAlgorithm"],'"></div>
+					<div><label for="SAMLRefreshIdPMetadata"></label></div>
+					<div><div><button type="button" id="btn_refreshidpmetadata" style="display; inline-block">',__("Refresh IdP Metadata"),'</button></div>
+					</div>
 				</div>
 			</div>
+			</fieldset>
 			<h3>',__("SAML Account Configuration"),'</h3>
 			<div class="table">
 				<div>
@@ -2288,7 +2655,7 @@ echo '<div class="main">
 </div> <!-- END div.table -->
 </form>
 </div>
-   <?php echo '<a href="index.php">[ ',__("Return to Main Menu"),' ]</a>'; ?>
+   <?php echo '<a href="index.php">[ ',__("Return to Main Menu"),' ]</a><span class="hide"><!-- hiding these two phrases here to make sure they get translated for use in the asset tracking status fields -->',__("Reserved"),'',__("Disposed"),'</span>'; ?>
 </div>
   </div>
   </div>

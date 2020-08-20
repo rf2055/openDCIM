@@ -2,7 +2,7 @@
 /* All functions contained herein will be general use functions */
 
 /* Create a quick reference for datacenter data */
-$_SESSION['datacenters']=DataCenter::GetDCList(true);
+@$_SESSION['datacenters']=DataCenter::GetDCList(true);
 
 /* Generic html sanitization routine */
 
@@ -98,7 +98,7 @@ Example usage:
 	exit;
 */
 function path(){
-	$path=explode("/",$_SERVER['REQUEST_URI']);
+	$path=explode("/",sanitize($_SERVER['REQUEST_URI']));
 	unset($path[(count($path)-1)]);
 	$path=implode("/",$path);
 	return $path;
@@ -114,9 +114,9 @@ function redirect($target = null) {
 		}
 	}else{
 		//Try to ensure that a properly formatted uri has been passed in.
-		if(substr($target, 4)!='http'){
+		if(substr($target, 0, 4)!='http'){
 			//doesn't start with http or https check to see if it is a path
-			if(substr($target, 1)!='/'){
+			if(substr($target, 0, 1)!='/'){
 				//didn't start with a slash so it must be a filename
 				$target=path()."/".$target;
 			}else{
@@ -128,10 +128,27 @@ function redirect($target = null) {
 			return $target;
 		}
 	}
-	if(array_key_exists('HTTPS', $_SERVER) && $_SERVER["HTTPS"]=='on') {
-		$url = "https://".$_SERVER['SERVER_NAME'].$target;
-	} else {
-		$url = "http://".@$_SERVER['SERVER_NAME'].$target;
+	// If we made it here we didn't return above so bring in the config values
+	$config=new Config();
+	// Write out the value of the InstallURL to a shorter variable and trim it of whitespace
+	// just in case some smart ass managed to get something weird in the value
+	$installURL=trim($config->ParameterArray['InstallURL']);
+	// Keep some smart ass admin from trying to use this to access weird things
+	$installURL=str_replace("..","",$installURL);
+	// Since we format our path above using a / trim any extras from the user supplied
+	// value or if they pull something cute and put ////
+	$installURL=rtrim($installURL,"/");
+	// Check if our $installURL value is blank
+	if($installURL!=""){
+		// $installURL isn't blank so combine it with the target to get a valid redirect target
+		$url = $installURL.$target;
+	}else{
+		// $installURL is blank so let's try to guess what the server will be for the redirect
+		if(array_key_exists('HTTPS', $_SERVER) && $_SERVER["HTTPS"]=='on') {
+			$url = "https://".$_SERVER['SERVER_NAME'].$target;
+		} else {
+			$url = "http://".@$_SERVER['SERVER_NAME'].$target;
+		}
 	}
 	return $url;
 }
@@ -663,52 +680,62 @@ if(!function_exists("buildNavTreeArray")){
 
 		$menu=array();
 
-		function processcontainer($container,$cabs){
-			$menu=array($container);
-			foreach($container->GetChildren() as $child){
-				if(get_class($child)=='Container'){
-					$menu[]=processcontainer($child,$cabs);
-				}elseif(get_class($child)=='DataCenter'){
-					$menu[]=processdatacenter($child,$cabs);
+		if(!function_exists("processcontainer")){
+			function processcontainer($container,$cabs){
+				$menu=array($container);
+				foreach($container->GetChildren() as $child){
+					if(get_class($child)=='Container'){
+						$menu[]=processcontainer($child,$cabs);
+					}elseif(get_class($child)=='DataCenter'){
+						$menu[]=processdatacenter($child,$cabs);
+					}
 				}
+				return $menu;
 			}
-			return $menu;
 		}
-		function processdatacenter($dc,$cabs){
-			$menu=array($dc);
-			foreach($dc->GetChildren() as $child){
-				if(get_class($child)=='Zone'){
-					$menu[]=processzone($child,$cabs);
-				}elseif(get_class($child)=='CabRow'){
-					$menu[]=processcabrow($child,$cabs);
-				}else{
-					$menu[]=processcab($child,$cabs);
+		if(!function_exists("processdatacenter")){
+			function processdatacenter($dc,$cabs){
+				$menu=array($dc);
+				foreach($dc->GetChildren() as $child){
+					if(get_class($child)=='Zone'){
+						$menu[]=processzone($child,$cabs);
+					}elseif(get_class($child)=='CabRow'){
+						$menu[]=processcabrow($child,$cabs);
+					}else{
+						$menu[]=processcab($child,$cabs);
+					}
 				}
+				return $menu;
 			}
-			return $menu;
 		}
-		function processzone($zone,$cabs){
-			$menu=array($zone);
-			foreach($zone->GetChildren() as $child){
-				if(get_class($child)=='CabRow'){
-					$menu[]=processcabrow($child,$cabs);
-				}else{
-					$menu[]=processcab($child,$cabs);
+		if(!function_exists("processzone")){
+			function processzone($zone,$cabs){
+				$menu=array($zone);
+				foreach($zone->GetChildren() as $child){
+					if(get_class($child)=='CabRow'){
+						$menu[]=processcabrow($child,$cabs);
+					}else{
+						$menu[]=processcab($child,$cabs);
+					}
 				}
+				return $menu;
 			}
-			return $menu;
 		}
-		function processcabrow($row,$cabs){
-			$menu=array($row);
-			foreach($cabs as $cab){
-				if($cab->CabRowID==$row->CabRowID){
-					$menu[]=processcab($cab,$cabs);
+		if(!function_exists("processcabrow")){
+			function processcabrow($row,$cabs){
+				$menu=array($row);
+				foreach($cabs as $cab){
+					if($cab->CabRowID==$row->CabRowID){
+						$menu[]=processcab($cab,$cabs);
+					}
 				}
+				return $menu;
 			}
-			return $menu;
 		}
-		function processcab($cab,$cabs){
-			return $cab;
+		if(!function_exists("processcab")){
+			function processcab($cab,$cabs){
+				return $cab;
+			}
 		}
 
 		foreach($con->GetChildren() as $child){
@@ -725,70 +752,103 @@ if(!function_exists("buildNavTreeArray")){
 
 // This will format the array above into the format needed for the side bar navigation
 // menu. 
-if(!function_exists("buildNavTreeHTML")){
-	function buildNavTreeHTML($menu=null){
+
+if(!function_exists("buildNavTreeHTML")) {
+	function buildNavTreeHTML(){
+		global $dbh;
+
+		$st = $dbh->prepare( "select * from fac_DataCache where ItemType='NavMenu'" );
+		$st->execute();
+
+		if ( $row = $st->fetch() ) {
+			return $row["Value"];
+		} else {
+			// Oops, there's no tree because this is the first time it's being run.
+			updateNavTreeHTML();
+			// Don't blindly risk a stuck forever loop (blank database) and only try to go one level deep
+			if ( $tree = buildNavTreeHTML() ) {
+				return $tree;
+			} else {
+				// Missing or blank database!   We might be in the installer phase, so just chill.
+				return false;
+			}
+		}
+	}
+}
+if(!function_exists("updateNavTreeHTML")){
+	function updateNavTreeHTML($menu=null){
+		global $dbh;
+
 		$tl=1; //tree level
 
 		$menu=(is_null($menu))?buildNavTreeArray():$menu;
 
-		function buildnavmenu($ma,&$tl){
-			foreach($ma as $i => $level){
-				if(is_object($level)){
-					if(isset($level->Name)){
-						$name=$level->Name;
-					}elseif(isset($level->Location)){
-						$name=$level->Location;
-					}else{
-						$name=$level->Description;
-					}
-					if($i==0){--$tl;}
-					foreach($level as $prop => $value){
-						if(preg_match("/id/i", $prop)){
-							$ObjectID=$value;
-							break;
+		if(!function_exists("buildnavmenu")){
+			function buildnavmenu($ma,&$tl){
+				$menuCode = "";
+				foreach($ma as $i => $level){
+					if(is_object($level)){
+						if(isset($level->Name)){
+							$name=$level->Name;
+						}elseif(isset($level->Location)){
+							$name=$level->Location;
+						}else{
+							$name=$level->Description;
 						}
-					}
-					$class=get_class($level);
-					$cabclose='';
-					if($class=="Container"){
-						$href="container_stats.php?container=";
-						$id="c$ObjectID";
-					}elseif($class=="Cabinet"){
-						$href="cabnavigator.php?cabinetid=";
-						$id="cab$ObjectID";
-						$cabclose="</li>";
-					}elseif($class=="Zone"){
-						$href="zone_stats.php?zone=";
-						$id="zone$ObjectID";
-					}elseif($class=="DataCenter"){
-						$href="dc_stats.php?dc=";
-						$id="dc$ObjectID";
-					}elseif($class=="CabRow"){
-						$href="rowview.php?row=";
-						$id="cr$ObjectID";
-					}
+						if($i==0){--$tl;}
+						foreach($level as $prop => $value){
+							if(preg_match("/id/i", $prop)){
+								$ObjectID=$value;
+								break;
+							}
+						}
+						$class=get_class($level);
+						$cabclose='';
+						if($class=="Container"){
+							$href="container_stats.php?container=";
+							$id="c$ObjectID";
+						}elseif($class=="Cabinet"){
+							$href="cabnavigator.php?cabinetid=";
+							$id="cab$ObjectID";
+							$cabclose="</li>";
+						}elseif($class=="Zone"){
+							$href="zone_stats.php?zone=";
+							$id="zone$ObjectID";
+						}elseif($class=="DataCenter"){
+							$href="dc_stats.php?dc=";
+							$id="dc$ObjectID";
+						}elseif($class=="CabRow"){
+							$href="rowview.php?row=";
+							$id="cr$ObjectID";
+						}
 
-					print str_repeat("\t",$tl).'<li class="liClosed" id="'.$id.'"><a class="'.$class.'" href="'.$href.$ObjectID."\">$name</a>$cabclose\n";
-					if($i==0){
-						++$tl;
-						print str_repeat("\t",$tl)."<ul>\n";
+						$menuCode .= str_repeat("\t",$tl).'<li class="liClosed" id="'.$id.'"><a class="'.$class.'" href="'.$href.$ObjectID."\">$name</a>$cabclose\n";
+						if($i==0){
+							++$tl;
+							$menuCode .= str_repeat("\t",$tl)."<ul>\n";
+						}
+					}else{
+						$tl++;
+						$menuCode .= buildnavmenu($level,$tl);
+						if(get_class($level[0])=="DataCenter"){
+							$menuCode .= str_repeat("\t",$tl).'<li id="dc-'.$level[0]->DataCenterID.'"><a href="storageroom.php?dc='.$level[0]->DataCenterID.'">Storage Room</a></li>'."\n";
+						}
+						$menuCode .= str_repeat("\t",$tl)."</ul>\n";
+						$tl--;
+						$menuCode .= str_repeat("\t",$tl)."</li>\n";
 					}
-				}else{
-					$tl++;
-					buildnavmenu($level,$tl);
-					if(get_class($level[0])=="DataCenter"){
-						print str_repeat("\t",$tl).'<li id="dc-'.$level[0]->DataCenterID.'"><a href="storageroom.php?dc='.$level[0]->DataCenterID.'">Storage Room</a></li>'."\n";
-					}
-					print str_repeat("\t",$tl)."</ul>\n";
-					$tl--;
-					print str_repeat("\t",$tl)."</li>\n";
 				}
+
+				return $menuCode;
 			}
 		}
 
-		print '<ul class="mktree" id="datacenters">'."\n";
-		buildnavmenu($menu,$tl);
-		print '<li id="dc-1"><a href="storageroom.php">'.__("General Storage Room")."</a></li>\n</ul>";
+		$menuCode  = '<ul class="mktree" id="datacenters">'."\n";
+		$menuCode .= buildnavmenu($menu,$tl);
+		$menuCode .=  '<li id="dc-1"><a href="storageroom.php">'.__("General Storage Room")."</a></li>\n</ul>";
+
+		$st = $dbh->prepare( "insert into fac_DataCache set ItemType='NavMenu', Value=:Value on duplicate key update Value=:Value" );
+		$st->execute( array( ":Value"=>$menuCode ));
 	}
 }
 
@@ -807,18 +867,27 @@ if(!function_exists("buildNavTreeHTML")){
 	we are.  It may be needed for the installation.
 */
 
-if( AUTHENTICATION=="Saml" && !isset($_SESSION['userid']) ){
+if( AUTHENTICATION=="Saml" && !isset($_SESSION['userid']) && php_sapi_name()!="cli" && !isset($loginPage))
+{
+	$savedurl = $_SERVER['SCRIPT_NAME'] . "?" . sanitize($_SERVER['QUERY_STRING']);
+	setcookie( 'targeturl', $savedurl, time()+60 );
 	header("Location: ".redirect('saml/login.php'));
 	exit;
 }
 
-if(isset($devMode)&&$devMode){
-	// Development mode, so don't apply the upgrades
-}else{
-	if(file_exists("install.php") && basename($_SERVER['SCRIPT_NAME'])!="install.php" ){
-		// new installs need to run the install first.
-		header("Location: ".redirect('install.php'));
-		exit;
+if(!(isset($devMode)&&$devMode)) {
+	$sql = "select Value from fac_Config where Parameter='Version'";
+	if ( $r = $dbh->query( $sql ))
+		$version = $r->fetchColumn();
+	else
+		$version = "";
+	if ( VERSION != $version ) {
+		if(file_exists("install.php") && basename($_SERVER['SCRIPT_NAME'])!="install.php" ){
+			error_log("Newer version codebase than database, redirecting to installation script.");
+			// new installs need to run the install first.
+			header("Location: ".redirect('install.php'));
+			exit;
+		}
 	}
 }
 
@@ -854,7 +923,7 @@ if(!People::Current()){
 	if(AUTHENTICATION=="Oauth"){
 		header("Location: ".redirect('oauth/login.php'));
 		exit;
-	} elseif ( AUTHENTICATION=="Saml"){
+	} elseif ( AUTHENTICATION=="Saml" && !isset($loginPage) ){
 		header("Location: ".redirect('saml/login.php'));
 		exit;
 	} elseif ( AUTHENTICATION=="LDAP" && !isset($loginPage) ) {
@@ -918,6 +987,7 @@ if ( $person->WriteAccess ) {
 if ($person->BulkOperations) {
 	$wamenu[__("Bulk Importer")][]='<a href="bulk_container.php"><span>'.__("Import Container/Datacenter/Zone/Row").'</span></a>';
 	$wamenu[__("Bulk Importer")][]='<a href="bulk_users.php"><span>'.__("Import User Accounts").'</span></a>';
+	$wamenu[__("Bulk Importer")][]='<a href="bulk_departments.php"><span>'.__("Import Departments/Customers").'</span></a>';
 	$wamenu[__("Bulk Importer")][]='<a href="bulk_templates.php"><span>'.__("Import Device Templates").'</span></a>';
 	$wamenu[__("Bulk Importer")][]='<a href="bulk_cabinet.php"><span>'.__("Import New Cabinets").'</span></a>';
 	$wamenu[__("Bulk Importer")][]='<a href="bulk_importer.php"><span>'.__("Import New Devices").'</span></a>';
@@ -948,6 +1018,19 @@ if( AUTHENTICATION == "LDAP" ) {
 	}
 	$lmenu[]='<a href="login_ldap.php?logout"><span>'.__("Logout").'</span></a>';
 }
+
+if (AUTHENTICATION == "Saml" ) {
+	$lmenu[]='<a href="saml/logout.php"><span>'.__("Logout").'</span></a>';
+}
+
+# Can really think that this is necessary - here for completemess
+#if( AUTHENTICATION == "Saml" ) {
+#	// Clear out the Reports menu button and create the Login menu button when not logged in
+#	if ( isset($loginPage) ) {
+#		$rmenu = array();
+#	}
+#	$lmenu[]='<a href="saml/logout.php"><span>'.__("Logout").'</span></a>';
+#}
 
 function download_file($archivo, $downloadfilename = null) {
 	if (file_exists($archivo)) {
@@ -1123,6 +1206,14 @@ function mangleDate($dateString) {
 	} else {
 		return date( "Y-m-d", $dateString );
 	}
+}
+
+function pdo_debugParams($stmt) {
+	ob_start();
+	$stmt->debugDumpParams();
+	$r = ob_get_contents();
+	ob_end_clean();
+	return $r;
 }
 
 class JobQueue {

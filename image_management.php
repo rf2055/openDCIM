@@ -9,7 +9,7 @@
 
 	if(isset($_POST['dir'])){
 		$array=array();
-		$path=(in_array($_POST['dir'],array('drawings','pictures')))?$_POST['dir']:'';
+		$path=(in_array($_POST['dir'],array($config->ParameterArray["picturepath"],$config->ParameterArray["drawingpath"])))?$_POST['dir']:'';
 		if(is_dir($path)){
 			$dir=scandir($path);
 			foreach($dir as $i => $f){
@@ -61,8 +61,8 @@ if($person->SiteAdmin || $person->WriteAccess){
 
 <div class="center"><div>
 <div class="heading"><?php print __("Device Pictures");?></div>
-<input type="file" name="dev_file_upload" data-dir="pictures" id="dev_file_upload" />
-
+<input type="file" name="dev_file_upload" data-thumbdiv="pictures" data-dir="<?php echo $config->ParameterArray["picturepath"]; ?>" id="dev_file_upload" />
+<div id="rebuild_image_cache" class="uploadifive-button" style="height: 30px; line-height: 30px; overflow: hidden; width: auto;display: inline-block; cursor: default;"><?php print __("Rebuild Image Cache");?></div>
 <script type="text/javascript">
 $(function() {
     $('#dev_file_upload').uploadifive({
@@ -88,10 +88,22 @@ $(function() {
 				$('#uploadifive-'+this[0].id+'-queue').append(toast);
 			}else{
 				// fuck yeah, reload the thumbnails
-				reload($(this).data('dir'));
+				reload($(this).data('dir'),$(this).data('thumbdiv'));
 			}
 		}
     });
+});
+$(document).ready(function(){
+	$('#uploadifive-dev_file_upload')[0].style.display="inline-block";
+	$('#uploadifive-dev_file_upload-queue').before($('#rebuild_image_cache'));
+
+	$('#rebuild_image_cache').on('click', function(){
+		$('<div>').append($('<iframe>').attr('src','build_image_cache.php').css({'max-width':'600px','max-height':'400px','min-height':'300px','align':'middle'})).attr('title','Rebuild device image cache').dialog({
+			width: 'auto',
+			modal: true
+		});
+	});
+
 });
 </script>
 </div><div>
@@ -110,7 +122,7 @@ if($person->SiteAdmin){
 
 <div class="center"><div>
 <div class="heading"><?php print __("Infrastructure Drawings");?></div>
-<input type="file" name="drawing_file_upload" data-dir="drawings" id="drawing_file_upload" />
+<input type="file" name="drawing_file_upload" data-thumbdiv="drawings" data-dir="<?php echo $config->ParameterArray["drawingpath"]; ?>" id="drawing_file_upload" />
 
 </div><div>
 
@@ -141,7 +153,7 @@ $(function() {
 				$('#uploadifive-'+this[0].id+'-queue').append(toast);
 			}else{
 				// fuck yeah, reload the thumbnails
-				reload($(this).data('dir'));
+				reload($(this).data('dir'),$(this).data('thumbdiv'));
 			}
 		}
     });
@@ -163,7 +175,7 @@ echo '<div id="delete-confirm" title="'.__("Delete image file?").'" class="hide"
 
 <script type="text/javascript">
 	$('.center input').each(function(){
-		reload($(this).data('dir'));
+		reload($(this).data('dir'),$(this).data('thumbdiv'));
 	});
 	timestamp="<?php echo $timestamp; ?>";
 	token="<?php echo $salt; ?>";
